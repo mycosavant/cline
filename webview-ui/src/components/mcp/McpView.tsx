@@ -8,7 +8,7 @@ import {
 	VSCodeOption,
 	VSCodeCheckbox,
 } from "@vscode/webview-ui-toolkit/react"
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import styled from "styled-components"
 import { DEFAULT_MCP_TIMEOUT_SECONDS, McpServer } from "../../../../src/shared/mcp"
 import { useExtensionState } from "../../context/ExtensionStateContext"
