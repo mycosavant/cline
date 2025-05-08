@@ -7,13 +7,17 @@ interface VSCodeButtonLinkProps {
 	[key: string]: any
 }
 
-export const VSCodeButtonLink = ({ href, children, ...props }: VSCodeButtonLinkProps) => (
-	<a
-		href={href}
-		style={{
-			textDecoration: "none",
-			color: "inherit",
-		}}>
-		<VSCodeButton {...props}>{children}</VSCodeButton>
-	</a>
-)
+const VSCodeButtonLink: React.FC<VSCodeButtonLinkProps> = ({ href, children, ...props }) => {
+	return (
+		<a
+			href={href}
+			style={{
+				textDecoration: "none",
+				color: "inherit",
+			}}>
+			<VSCodeButton {...props}>{children}</VSCodeButton>
+		</a>
+	)
+}
+
+export default VSCodeButtonLink

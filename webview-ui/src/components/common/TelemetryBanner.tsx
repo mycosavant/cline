@@ -1,79 +1,90 @@
-import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react"
-import { memo, useState } from "react"
-import styled from "styled-components"
-import { vscode } from "@src/utils/vscode"
-import { TelemetrySetting } from "@roo/shared/TelemetrySetting"
-import { useAppTranslation } from "@src/i18n/TranslationContext"
-import { Trans } from "react-i18next"
+import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react";
+import { memo, useState } from "react";
+import styled from "styled-components";
+import { glassEffect } from "../../styles/glassmorphism";
+import { vscode } from "../../utils/vscode";
+import { TelemetrySetting } from "../../../../src/shared/TelemetrySetting";
 
 const BannerContainer = styled.div`
-	background-color: var(--vscode-banner-background);
-	padding: 12px 20px;
-	display: flex;
-	flex-direction: column;
-	gap: 10px;
-	flex-shrink: 0;
-	margin-bottom: 6px;
-`
+  ${glassEffect()}
+  background-color: color-mix(in srgb, var(--vscode-banner-background) 90%, transparent);
+  padding: 15px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+  margin-bottom: 10px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  
+  h3 {
+    margin: 0;
+    font-size: 15px;
+  }
+  
+  p {
+    margin: 8px 0 0;
+    line-height: 1.4;
+  }
+  
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+  }
+`;
 
 const ButtonContainer = styled.div`
-	display: flex;
-	gap: 8px;
-	width: 100%;
-	& > vscode-button {
-		flex: 1;
-	}
-`
+  display: flex;
+  gap: 8px;
+  width: 100%;
+
+  & > vscode-button {
+    flex: 1;
+  }
+`;
 
 const TelemetryBanner = () => {
-	const { t } = useAppTranslation()
-	const [hasChosen, setHasChosen] = useState(false)
+  const [hasChosen, setHasChosen] = useState(false);
 
-	const handleAllow = () => {
-		setHasChosen(true)
-		vscode.postMessage({ type: "telemetrySetting", text: "enabled" satisfies TelemetrySetting })
-	}
+  const handleAllow = () => {
+    setHasChosen(true);
+    vscode.postMessage({ type: "telemetrySetting", telemetrySetting: "enabled" satisfies TelemetrySetting });
+  };
 
-	const handleDeny = () => {
-		setHasChosen(true)
-		vscode.postMessage({ type: "telemetrySetting", text: "disabled" satisfies TelemetrySetting })
-	}
+  const handleDeny = () => {
+    setHasChosen(true);
+    vscode.postMessage({ type: "telemetrySetting", telemetrySetting: "disabled" satisfies TelemetrySetting });
+  };
 
-	const handleOpenSettings = () => {
-		window.postMessage({
-			type: "action",
-			action: "settingsButtonClicked",
-			values: { section: "advanced" }, // Link directly to advanced settings with telemetry controls
-		})
-	}
+  const handleOpenSettings = () => {
+    vscode.postMessage({ type: "openSettings" });
+  };
 
-	return (
-		<BannerContainer>
-			<div>
-				<strong>{t("welcome:telemetry.title")}</strong>
-				<div className="mt-1">
-					{t("welcome:telemetry.anonymousTelemetry")}
-					<div className="mt-1">
-						<Trans
-							i18nKey="welcome:telemetry.changeSettings"
-							components={{
-								settingsLink: <VSCodeLink href="#" onClick={handleOpenSettings} />,
-							}}
-						/>
-						.
-					</div>
-				</div>
-			</div>
-			<ButtonContainer>
-				<VSCodeButton appearance="primary" onClick={handleAllow} disabled={hasChosen}>
-					{t("welcome:telemetry.allow")}
-				</VSCodeButton>
-				<VSCodeButton appearance="secondary" onClick={handleDeny} disabled={hasChosen}>
-					{t("welcome:telemetry.deny")}
-				</VSCodeButton>
-			</ButtonContainer>
-		</BannerContainer>
-	)
-}
+  return (
+    <BannerContainer>
+      <div>
+        <h3>Help Improve Klaus</h3>
+        <div>
+          Send anonymous error and usage data to help us fix bugs and improve the extension. No code, prompts, or
+          personal information is ever sent.
+          <div style={{ marginTop: 4 }}>
+            You can always change this in{" "}
+            <VSCodeLink href="#" onClick={handleOpenSettings}>
+              settings
+            </VSCodeLink>
+            .
+          </div>
+        </div>
+      </div>
+      <ButtonContainer>
+        <VSCodeButton appearance="primary" onClick={handleAllow} disabled={hasChosen}>
+          Allow
+        </VSCodeButton>
+        <VSCodeButton appearance="secondary" onClick={handleDeny} disabled={hasChosen}>
+          Deny
+        </VSCodeButton>
+      </ButtonContainer>
+    </BannerContainer>
+  );
+};
 
-export default memo(TelemetryBanner)
+export default memo(TelemetryBanner);

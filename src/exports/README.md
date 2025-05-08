@@ -1,44 +1,55 @@
-# Roo Code API
+# Klaus API
 
-The Roo Code extension exposes an API that can be used by other extensions. To use this API in your extension:
+The Klaus extension exposes an API that can be used by other extensions. To use this API in your extension:
 
-1. Copy `src/extension-api/roo-code.d.ts` to your extension's source directory.
-2. Include `roo-code.d.ts` in your extension's compilation.
+1. Copy `src/extension-api/Klaus.d.ts` to your extension's source directory.
+2. Include `Klaus.d.ts` in your extension's compilation.
 3. Get access to the API with the following code:
 
-```typescript
-const extension = vscode.extensions.getExtension<RooCodeAPI>("rooveterinaryinc.roo-cline")
+    ```ts
+    const KlausExtension = vscode.extensions.getExtension<KlausAPI>("saoudrizwan.cline-dev.")
 
-if (!extension?.isActive) {
-	throw new Error("Extension is not activated")
-}
+    if (!KlausExtension?.isActive) {
+    	throw new Error("Klaus extension is not activated")
+    }
 
-const api = extension.exports
+    const Klaus = KlausExtension.exports
 
-if (!api) {
-	throw new Error("API is not available")
-}
+    if (Klaus) {
+    	// Now you can use the API
 
-// Start a new task with an initial message.
-await api.startNewTask("Hello, Roo Code API! Let's make a new project...")
+    	// Set custom instructions
+    	await Klaus.setCustomInstructions("Talk like a pirate")
 
-// Start a new task with an initial message and images.
-await api.startNewTask("Use this design language", ["data:image/webp;base64,..."])
+    	// Get custom instructions
+    	const instructions = await Klaus.getCustomInstructions()
+    	console.log("Current custom instructions:", instructions)
 
-// Send a message to the current task.
-await api.sendMessage("Can you fix the @problems?")
+    	// Start a new task with an initial message
+    	await Klaus.startNewTask("Hello, Klaus! Let's make a new project...")
 
-// Simulate pressing the primary button in the chat interface (e.g. 'Save' or 'Proceed While Running').
-await api.pressPrimaryButton()
+    	// Start a new task with an initial message and images
+    	await Klaus.startNewTask("Use this design language", ["data:image/webp;base64,..."])
 
-// Simulate pressing the secondary button in the chat interface (e.g. 'Reject').
-await api.pressSecondaryButton()
-```
+    	// Send a message to the current task
+    	await Klaus.sendMessage("Can you fix the @problems?")
 
-**NOTE:** To ensure that the `rooveterinaryinc.roo-cline` extension is activated before your extension, add it to the `extensionDependencies` in your `package.json`:
+    	// Simulate pressing the primary button in the chat interface (e.g. 'Save' or 'Proceed While Running')
+    	await Klaus.pressPrimaryButton()
 
-```json
-"extensionDependencies": ["rooveterinaryinc.roo-cline"]
-```
+    	// Simulate pressing the secondary button in the chat interface (e.g. 'Reject')
+    	await Klaus.pressSecondaryButton()
+    } else {
+    	console.error("Klaus API is not available")
+    }
+    ```
 
-For detailed information on the available methods and their usage, refer to the `roo-code.d.ts` file.
+    **Note:** To ensure that the `onemind.klaus-dev` extension is activated before your extension, add it to the `extensionDependencies` in your `package.json`:
+
+    ```json
+    "extensionDependencies": [
+        "onemind.klaus-dev"
+    ]
+    ```
+
+For detailed information on the available methods and their usage, refer to the `Klaus.d.ts` file.

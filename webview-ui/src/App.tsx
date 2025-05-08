@@ -1,90 +1,75 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useEvent } from "react-use"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-
-import { ExtensionMessage } from "@roo/shared/ExtensionMessage"
-import TranslationProvider from "./i18n/TranslationContext"
-
-import { vscode } from "./utils/vscode"
-import { telemetryClient } from "./utils/TelemetryClient"
-import { ExtensionStateContextProvider, useExtensionState } from "./context/ExtensionStateContext"
-import ChatView, { ChatViewRef } from "./components/chat/ChatView"
+import { ExtensionMessage } from "../../src/shared/ExtensionMessage"
+import ChatView from "./components/chat/ChatView"
 import HistoryView from "./components/history/HistoryView"
-import SettingsView, { SettingsViewRef } from "./components/settings/SettingsView"
+import SettingsView from "./components/settings/SettingsView"
 import WelcomeView from "./components/welcome/WelcomeView"
+import AccountView from "./components/account/AccountView"
+import { ExtensionStateContextProvider, useExtensionState } from "./context/ExtensionStateContext"
+import { FirebaseAuthProvider } from "./context/FirebaseAuthContext"
+import { vscode } from "./utils/vscode"
 import McpView from "./components/mcp/McpView"
-import PromptsView from "./components/prompts/PromptsView"
-import { HumanRelayDialog } from "./components/human-relay/HumanRelayDialog"
+import GlassmorphismProvider from "./components/providers/GlassmorphismProvider"
 
-type Tab = "settings" | "history" | "mcp" | "prompts" | "chat"
-
-const tabsByMessageAction: Partial<Record<NonNullable<ExtensionMessage["action"]>, Tab>> = {
-	chatButtonClicked: "chat",
-	settingsButtonClicked: "settings",
-	promptsButtonClicked: "prompts",
-	mcpButtonClicked: "mcp",
-	historyButtonClicked: "history",
-}
-
-const App = () => {
-	const { didHydrateState, showWelcome, shouldShowAnnouncement, telemetrySetting, telemetryKey, machineId } =
-		useExtensionState()
-
+const AppContent = () => {
+	const { didHydrateState, showWelcome, shouldShowAnnouncement, telemetrySetting, vscMachineId, theme } = useExtensionState()
+	const [showSettings, setShowSettings] = useState(false)
+	const [showHistory, setShowHistory] = useState(false)
+	const [showMcp, setShowMcp] = useState(false)
+	const [showAccount, setShowAccount] = useState(false)
 	const [showAnnouncement, setShowAnnouncement] = useState(false)
-	const [tab, setTab] = useState<Tab>("chat")
 
-	const [humanRelayDialogState, setHumanRelayDialogState] = useState<{
-		isOpen: boolean
-		requestId: string
-		promptText: string
-	}>({
-		isOpen: false,
-		requestId: "",
-		promptText: "",
-	})
-
-	const settingsRef = useRef<SettingsViewRef>(null)
-	const chatViewRef = useRef<ChatViewRef>(null)
-
-	const switchTab = useCallback((newTab: Tab) => {
-		setCurrentSection(undefined)
-
-		if (settingsRef.current?.checkUnsaveChanges) {
-			settingsRef.current.checkUnsaveChanges(() => setTab(newTab))
-		} else {
-			setTab(newTab)
+	const handleMessage = useCallback((e: MessageEvent) => {
+		const message: ExtensionMessage = e.data
+		switch (message.type) {
+			case "action":
+				switch (message.action!) {
+					case "settingsButtonClicked":
+						setShowSettings(true)
+						setShowHistory(false)
+						setShowMcp(false)
+						setShowAccount(false)
+						break
+					case "historyButtonClicked":
+						setShowSettings(false)
+						setShowHistory(true)
+						setShowMcp(false)
+						setShowAccount(false)
+						break
+					case "mcpButtonClicked":
+						setShowSettings(false)
+						setShowHistory(false)
+						setShowMcp(true)
+						setShowAccount(false)
+						break
+					case "accountButtonClicked":
+						setShowSettings(false)
+						setShowHistory(false)
+						setShowMcp(false)
+						setShowAccount(true)
+						break
+					case "chatButtonClicked":
+						setShowSettings(false)
+						setShowHistory(false)
+						setShowMcp(false)
+						setShowAccount(false)
+						break
+				}
+				break
 		}
 	}, [])
 
-	const [currentSection, setCurrentSection] = useState<string | undefined>(undefined)
+	useEvent("message", handleMessage)
 
-	const onMessage = useCallback(
-		(e: MessageEvent) => {
-			const message: ExtensionMessage = e.data
-
-			if (message.type === "action" && message.action) {
-				const newTab = tabsByMessageAction[message.action]
-				const section = message.values?.section as string | undefined
-
-				if (newTab) {
-					switchTab(newTab)
-					setCurrentSection(section)
-				}
-			}
-
-			if (message.type === "showHumanRelayDialog" && message.requestId && message.promptText) {
-				const { requestId, promptText } = message
-				setHumanRelayDialogState({ isOpen: true, requestId, promptText })
-			}
-
-			if (message.type === "acceptInput") {
-				chatViewRef.current?.acceptInput()
-			}
-		},
-		[switchTab],
-	)
-
-	useEvent("message", onMessage)
+	// useEffect(() => {
+	// 	if (telemetrySetting === "enabled") {
+	// 		posthog.identify(vscMachineId)
+	// 		posthog.opt_in_capturing()
+	// 	} else {
+	// 		posthog.opt_out_capturing()
+	// 	}
+	// }, [telemetrySetting, vscMachineId])
 
 	useEffect(() => {
 		if (shouldShowAnnouncement) {
@@ -93,59 +78,66 @@ const App = () => {
 		}
 	}, [shouldShowAnnouncement])
 
+	// Set up global CSS variables when theme changes
 	useEffect(() => {
-		if (didHydrateState) {
-			telemetryClient.updateTelemetryState(telemetrySetting, telemetryKey, machineId)
-		}
-	}, [telemetrySetting, telemetryKey, machineId, didHydrateState])
-
-	// Tell the extension that we are ready to receive messages.
-	useEffect(() => vscode.postMessage({ type: "webviewDidLaunch" }), [])
+		const isDarkTheme = theme?.['&']?.includes('dark') || false;
+		
+		document.documentElement.style.setProperty('--glass-opacity', isDarkTheme ? '0.7' : '0.8');
+		document.documentElement.style.setProperty('--glass-blur', isDarkTheme ? '10px' : '8px');
+		document.documentElement.style.setProperty('--glass-radius', '8px');
+		document.documentElement.style.setProperty('--glass-shadow', isDarkTheme ? 
+			'0 4px 12px rgba(0, 0, 0, 0.2)' : 
+			'0 4px 12px rgba(0, 0, 0, 0.1)');
+		document.documentElement.style.setProperty('--glass-border-color', 
+			`color-mix(in srgb, var(--vscode-input-border) ${isDarkTheme ? '50%' : '40%'}, transparent)`);
+		document.documentElement.style.setProperty('--glass-highlight', 
+			`color-mix(in srgb, var(--vscode-focusBorder) ${isDarkTheme ? '10%' : '8%'}, transparent)`);
+	}, [theme]);
 
 	if (!didHydrateState) {
 		return null
 	}
 
-	// Do not conditionally load ChatView, it's expensive and there's state we
-	// don't want to lose (user input, disableInput, askResponse promise, etc.)
-	return showWelcome ? (
-		<WelcomeView />
-	) : (
+	return (
 		<>
-			{tab === "prompts" && <PromptsView onDone={() => switchTab("chat")} />}
-			{tab === "mcp" && <McpView onDone={() => switchTab("chat")} />}
-			{tab === "history" && <HistoryView onDone={() => switchTab("chat")} />}
-			{tab === "settings" && (
-				<SettingsView ref={settingsRef} onDone={() => setTab("chat")} targetSection={currentSection} />
+			{showWelcome ? (
+				<WelcomeView />
+			) : (
+				<>
+					{showSettings && <SettingsView onDone={() => setShowSettings(false)} />}
+					{showHistory && <HistoryView onDone={() => setShowHistory(false)} />}
+					{showMcp && <McpView onDone={() => setShowMcp(false)} />}
+					{showAccount && <AccountView onDone={() => setShowAccount(false)} />}
+					{/* Do not conditionally load ChatView, it's expensive and there's state we don't want to lose (user input, disableInput, askResponse promise, etc.) */}
+					<ChatView
+						showHistoryView={() => {
+							setShowSettings(false)
+							setShowMcp(false)
+							setShowAccount(false)
+							setShowHistory(true)
+						}}
+						isHidden={showSettings || showHistory || showMcp || showAccount}
+						showAnnouncement={showAnnouncement}
+						hideAnnouncement={() => {
+							setShowAnnouncement(false)
+						}}
+					/>
+				</>
 			)}
-			<ChatView
-				ref={chatViewRef}
-				isHidden={tab !== "chat"}
-				showAnnouncement={showAnnouncement}
-				hideAnnouncement={() => setShowAnnouncement(false)}
-			/>
-			<HumanRelayDialog
-				isOpen={humanRelayDialogState.isOpen}
-				requestId={humanRelayDialogState.requestId}
-				promptText={humanRelayDialogState.promptText}
-				onClose={() => setHumanRelayDialogState((prev) => ({ ...prev, isOpen: false }))}
-				onSubmit={(requestId, text) => vscode.postMessage({ type: "humanRelayResponse", requestId, text })}
-				onCancel={(requestId) => vscode.postMessage({ type: "humanRelayCancel", requestId })}
-			/>
 		</>
 	)
 }
 
-const queryClient = new QueryClient()
+const App = () => {
+	return (
+		<ExtensionStateContextProvider>
+			<FirebaseAuthProvider>
+				<GlassmorphismProvider>
+					<AppContent />
+				</GlassmorphismProvider>
+			</FirebaseAuthProvider>
+		</ExtensionStateContextProvider>
+	)
+}
 
-const AppWithProviders = () => (
-	<ExtensionStateContextProvider>
-		<TranslationProvider>
-			<QueryClientProvider client={queryClient}>
-				<App />
-			</QueryClientProvider>
-		</TranslationProvider>
-	</ExtensionStateContextProvider>
-)
-
-export default AppWithProviders
+export default App

@@ -1,67 +1,161 @@
+import { VSCodeButton } from "@vscode/webview-ui-toolkit/react"
+import { useExtensionState } from "../../context/ExtensionStateContext"
+import { vscode } from "../../utils/vscode"
 import { memo } from "react"
+import { formatLargeNumber } from "../../utils/format"
 
-import { vscode } from "@/utils/vscode"
-import { formatLargeNumber, formatDate } from "@/utils/format"
+type HistoryPreviewProps = {
+	showHistoryView: () => void
+}
 
-import { CopyButton } from "./CopyButton"
-import { useTaskSearch } from "./useTaskSearch"
+const HistoryPreview = ({ showHistoryView }: HistoryPreviewProps) => {
+	const { taskHistory } = useExtensionState()
+	const handleHistorySelect = (id: string) => {
+		vscode.postMessage({ type: "showTaskWithId", text: id })
+	}
 
-import { Coins } from "lucide-react"
-
-const HistoryPreview = () => {
-	const { tasks, showAllWorkspaces } = useTaskSearch()
+	const formatDate = (timestamp: number) => {
+		const date = new Date(timestamp)
+		return date
+			?.toLocaleString("en-US", {
+				month: "long",
+				day: "numeric",
+				hour: "numeric",
+				minute: "2-digit",
+				hour12: true,
+			})
+			.replace(", ", " ")
+			.replace(" at", ",")
+			.toUpperCase()
+	}
 
 	return (
-		<>
-			<div className="flex flex-col gap-3">
-				{tasks.length !== 0 && (
-					<>
-						{tasks.slice(0, 3).map((item) => (
-							<div
-								key={item.id}
-								className="bg-vscode-editor-background rounded relative overflow-hidden cursor-pointer border border-vscode-toolbar-hoverBackground/30 hover:border-vscode-toolbar-hoverBackground/60"
-								onClick={() => vscode.postMessage({ type: "showTaskWithId", text: item.id })}>
-								<div className="flex flex-col gap-2 p-3 pt-1">
-									<div className="flex justify-between items-center">
-										<span className="text-xs font-medium text-vscode-descriptionForeground uppercase">
-											{formatDate(item.ts)}
-										</span>
-										<CopyButton itemTask={item.task} />
-									</div>
-									<div
-										className="text-vscode-foreground overflow-hidden whitespace-pre-wrap"
+		<div style={{ flexShrink: 0 }}>
+			<style>
+				{`
+					.history-preview-item {
+						background-color: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 65%, transparent);
+						border-radius: 4px;
+						position: relative;
+						overflow: hidden;
+						opacity: 0.8;
+						cursor: pointer;
+						margin-bottom: 12px;
+					}
+					.history-preview-item:hover {
+						background-color: color-mix(in srgb, var(--vscode-toolbar-hoverBackground) 100%, transparent);
+						opacity: 1;
+						pointer-events: auto;
+					}
+				`}
+			</style>
+
+			<div
+				style={{
+					color: "var(--vscode-descriptionForeground)",
+					margin: "10px 20px 10px 20px",
+					display: "flex",
+					alignItems: "center",
+				}}>
+				<span
+					className="codicon codicon-comment-discussion"
+					style={{
+						marginRight: "4px",
+						transform: "scale(0.9)",
+					}}></span>
+				<span
+					style={{
+						fontWeight: 500,
+						fontSize: "0.85em",
+						textTransform: "uppercase",
+					}}>
+					Recent Tasks
+				</span>
+			</div>
+
+			<div style={{ padding: "0px 20px 0 20px" }}>
+				{taskHistory
+					.filter((item) => item.ts && item.task)
+					.slice(0, 3)
+					.map((item) => (
+						<div key={item.id} className="history-preview-item" onClick={() => handleHistorySelect(item.id)}>
+							<div style={{ padding: "12px" }}>
+								<div style={{ marginBottom: "8px" }}>
+									<span
 										style={{
-											display: "-webkit-box",
-											WebkitLineClamp: 2,
-											WebkitBoxOrient: "vertical",
-											wordBreak: "break-word",
-											overflowWrap: "anywhere",
+											color: "var(--vscode-descriptionForeground)",
+											fontWeight: 500,
+											fontSize: "0.85em",
+											textTransform: "uppercase",
 										}}>
-										{item.task}
-									</div>
-									<div className="flex flex-row gap-2 text-xs text-vscode-descriptionForeground">
-										<span>↑ {formatLargeNumber(item.tokensIn || 0)}</span>
-										<span>↓ {formatLargeNumber(item.tokensOut || 0)}</span>
-										{!!item.totalCost && (
+										{formatDate(item.ts)}
+									</span>
+								</div>
+								<div
+									style={{
+										fontSize: "var(--vscode-font-size)",
+										color: "var(--vscode-descriptionForeground)",
+										marginBottom: "8px",
+										display: "-webkit-box",
+										WebkitLineClamp: 3,
+										WebkitBoxOrient: "vertical",
+										overflow: "hidden",
+										whiteSpace: "pre-wrap",
+										wordBreak: "break-word",
+										overflowWrap: "anywhere",
+									}}>
+									{item.task}
+								</div>
+								<div
+									style={{
+										fontSize: "0.85em",
+										color: "var(--vscode-descriptionForeground)",
+									}}>
+									<span>
+										Tokens: ↑{formatLargeNumber(item.tokensIn || 0)} ↓{formatLargeNumber(item.tokensOut || 0)}
+									</span>
+									{!!item.cacheWrites && (
+										<>
+											{" • "}
 											<span>
-												<Coins className="inline-block size-[1em]" />{" "}
-												{"$" + item.totalCost?.toFixed(2)}
+												Cache: +{formatLargeNumber(item.cacheWrites || 0)} →{" "}
+												{formatLargeNumber(item.cacheReads || 0)}
 											</span>
-										)}
-									</div>
-									{showAllWorkspaces && item.workspace && (
-										<div className="flex flex-row gap-1 text-vscode-descriptionForeground text-xs mt-1">
-											<span className="codicon codicon-folder scale-80" />
-											<span>{item.workspace}</span>
-										</div>
+										</>
+									)}
+									{!!item.totalCost && (
+										<>
+											{" • "}
+											<span>API Cost: ${item.totalCost?.toFixed(4)}</span>
+										</>
 									)}
 								</div>
 							</div>
-						))}
-					</>
-				)}
+						</div>
+					))}
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+					}}>
+					<VSCodeButton
+						appearance="icon"
+						onClick={() => showHistoryView()}
+						style={{
+							opacity: 0.9,
+						}}>
+						<div
+							style={{
+								fontSize: "var(--vscode-font-size)",
+								color: "var(--vscode-descriptionForeground)",
+							}}>
+							View all history
+						</div>
+					</VSCodeButton>
+				</div>
 			</div>
-		</>
+		</div>
 	)
 }
 

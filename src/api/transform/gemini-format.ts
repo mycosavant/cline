@@ -1,71 +1,26 @@
 import { Anthropic } from "@anthropic-ai/sdk"
-import { Content, Part } from "@google/genai"
+import { Content, EnhancedGenerateContentResponse, InlineDataPart, Part, TextPart } from "@google/generative-ai"
 
 export function convertAnthropicContentToGemini(content: string | Anthropic.ContentBlockParam[]): Part[] {
 	if (typeof content === "string") {
-		return [{ text: content }]
+		return [{ text: content } as TextPart]
 	}
-
-	return content.flatMap((block): Part | Part[] => {
+	return content.flatMap((block) => {
 		switch (block.type) {
 			case "text":
-				return { text: block.text }
+				return { text: block.text } as TextPart
 			case "image":
 				if (block.source.type !== "base64") {
 					throw new Error("Unsupported image source type")
 				}
-
-				return { inlineData: { data: block.source.data, mimeType: block.source.media_type } }
-			case "tool_use":
 				return {
-					functionCall: {
-						name: block.name,
-						args: block.input as Record<string, unknown>,
+					inlineData: {
+						data: block.source.data,
+						mimeType: block.source.media_type,
 					},
-				}
-			case "tool_result": {
-				if (!block.content) {
-					return []
-				}
-
-				// Extract tool name from tool_use_id (e.g., "calculator-123" -> "calculator")
-				const toolName = block.tool_use_id.split("-")[0]
-
-				if (typeof block.content === "string") {
-					return {
-						functionResponse: { name: toolName, response: { name: toolName, content: block.content } },
-					}
-				}
-
-				if (!Array.isArray(block.content)) {
-					return []
-				}
-
-				const textParts: string[] = []
-				const imageParts: Part[] = []
-
-				for (const item of block.content) {
-					if (item.type === "text") {
-						textParts.push(item.text)
-					} else if (item.type === "image" && item.source.type === "base64") {
-						const { data, media_type } = item.source
-						imageParts.push({ inlineData: { data, mimeType: media_type } })
-					}
-				}
-
-				// Create content text with a note about images if present
-				const contentText =
-					textParts.join("\n\n") + (imageParts.length > 0 ? "\n\n(See next part for image)" : "")
-
-				// Return function response followed by any images
-				return [
-					{ functionResponse: { name: toolName, response: { name: toolName, content: contentText } } },
-					...imageParts,
-				]
-			}
+				} as InlineDataPart
 			default:
-				// Currently unsupported: "thinking" | "redacted_thinking" | "document"
-				throw new Error(`Unsupported content block type: ${block.type}`)
+				throw new Error(`Unsupported content block type: ${(block as any).type}`)
 		}
 	})
 }
@@ -77,8 +32,55 @@ export function convertAnthropicMessageToGemini(message: Anthropic.Messages.Mess
 	}
 }
 
-const getContentLength = ({ parts }: Content): number =>
-	parts?.reduce((length, { text }) => length + (text?.length ?? 0), 0) ?? 0
+/*
+It looks like gemini likes to double escape certain characters when writing file contents: https://discuss.ai.google.dev/t/function-call-string-property-is-double-escaped/37867
+*/
+export function unescapeGeminiContent(content: string) {
+	return content.replace(/\\n/g, "\n").replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\r/g, "\r").replace(/\\t/g, "\t")
+}
 
-export const getMessagesLength = (contents: Content[]): number =>
-	contents.reduce((length, content) => length + getContentLength(content), 0)
+export function convertGeminiResponseToAnthropic(response: EnhancedGenerateContentResponse): Anthropic.Messages.Message {
+	const content: Anthropic.Messages.ContentBlock[] = []
+
+	// Add the main text response
+	const text = response.text()
+	if (text) {
+		content.push({ type: "text", text, citations: null })
+	}
+
+	// Determine stop reason
+	let stop_reason: Anthropic.Messages.Message["stop_reason"] = null
+	const finishReason = response.candidates?.[0]?.finishReason
+	if (finishReason) {
+		switch (finishReason) {
+			case "STOP":
+				stop_reason = "end_turn"
+				break
+			case "MAX_TOKENS":
+				stop_reason = "max_tokens"
+				break
+			case "SAFETY":
+			case "RECITATION":
+			case "OTHER":
+				stop_reason = "stop_sequence"
+				break
+			// Add more cases if needed
+		}
+	}
+
+	return {
+		id: `msg_${Date.now()}`, // Generate a unique ID
+		type: "message",
+		role: "assistant",
+		content,
+		model: "",
+		stop_reason,
+		stop_sequence: null, // Gemini doesn't provide this information
+		usage: {
+			input_tokens: response.usageMetadata?.promptTokenCount ?? 0,
+			output_tokens: response.usageMetadata?.candidatesTokenCount ?? 0,
+			cache_creation_input_tokens: null,
+			cache_read_input_tokens: null,
+		},
+	}
+}

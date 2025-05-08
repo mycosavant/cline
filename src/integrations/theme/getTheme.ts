@@ -74,11 +74,7 @@ export async function getTheme() {
 		const converted = convertTheme(parsed)
 
 		converted.base = (
-			["vs", "hc-black"].includes(converted.base)
-				? converted.base
-				: colorTheme.includes("Light")
-					? "vs"
-					: "vs-dark"
+			["vs", "hc-black"].includes(converted.base) ? converted.base : colorTheme.includes("Light") ? "vs" : "vs-dark"
 		) as any
 
 		return converted
@@ -141,5 +137,5 @@ export function mergeJson(
 }
 
 function getExtensionUri(): vscode.Uri {
-	return vscode.extensions.getExtension("rooveterinaryinc.roo-cline")!.extensionUri
+	return vscode.extensions.getExtension("onemind.klaus-dev")!.extensionUri
 }

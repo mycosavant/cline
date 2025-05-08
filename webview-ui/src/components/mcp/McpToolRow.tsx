@@ -1,28 +1,28 @@
 import { VSCodeCheckbox } from "@vscode/webview-ui-toolkit/react"
-import { McpTool } from "@roo/shared/mcp"
-import { useAppTranslation } from "@src/i18n/TranslationContext"
-import { vscode } from "@src/utils/vscode"
+import { McpTool } from "../../../../src/shared/mcp"
+import { vscode } from "../../utils/vscode"
+import { useExtensionState } from "../../context/ExtensionStateContext"
 
 type McpToolRowProps = {
 	tool: McpTool
 	serverName?: string
-	serverSource?: "global" | "project"
-	alwaysAllowMcp?: boolean
 }
 
-const McpToolRow = ({ tool, serverName, serverSource, alwaysAllowMcp }: McpToolRowProps) => {
-	const { t } = useAppTranslation()
-	const handleAlwaysAllowChange = () => {
-		if (!serverName) return
+const McpToolRow = ({ tool, serverName }: McpToolRowProps) => {
+	const { autoApprovalSettings } = useExtensionState()
+
+	// Accept the event object
+	const handleAutoApproveChange = (event: any) => {
+		// Only proceed if the event was triggered by a direct user interaction
+		if (!serverName || !event.isTrusted) return
+
 		vscode.postMessage({
-			type: "toggleToolAlwaysAllow",
+			type: "toggleToolAutoApprove",
 			serverName,
-			source: serverSource || "global",
-			toolName: tool.name,
-			alwaysAllow: !tool.alwaysAllow,
+			toolNames: [tool.name],
+			autoApprove: !tool.autoApprove,
 		})
 	}
-
 	return (
 		<div
 			key={tool.name}
@@ -37,9 +37,9 @@ const McpToolRow = ({ tool, serverName, serverSource, alwaysAllowMcp }: McpToolR
 					<span className="codicon codicon-symbol-method" style={{ marginRight: "6px" }}></span>
 					<span style={{ fontWeight: 500 }}>{tool.name}</span>
 				</div>
-				{serverName && alwaysAllowMcp && (
-					<VSCodeCheckbox checked={tool.alwaysAllow} onChange={handleAlwaysAllowChange} data-tool={tool.name}>
-						{t("mcp:tool.alwaysAllow")}
+				{serverName && autoApprovalSettings.enabled && autoApprovalSettings.actions.useMcp && (
+					<VSCodeCheckbox checked={tool.autoApprove} onChange={handleAutoApproveChange} data-tool={tool.name}>
+						Auto-approve
 					</VSCodeCheckbox>
 				)}
 			</div>
@@ -66,47 +66,55 @@ const McpToolRow = ({ tool, serverName, serverSource, alwaysAllowMcp }: McpToolR
 							padding: "8px",
 						}}>
 						<div
-							style={{ marginBottom: "4px", opacity: 0.8, fontSize: "11px", textTransform: "uppercase" }}>
-							{t("mcp:tool.parameters")}
+							style={{
+								marginBottom: "4px",
+								opacity: 0.8,
+								fontSize: "11px",
+								textTransform: "uppercase",
+							}}>
+							Parameters
 						</div>
-						{Object.entries(tool.inputSchema.properties as Record<string, any>).map(
-							([paramName, schema]) => {
-								const isRequired =
-									tool.inputSchema &&
-									"required" in tool.inputSchema &&
-									Array.isArray(tool.inputSchema.required) &&
-									tool.inputSchema.required.includes(paramName)
+						{Object.entries(tool.inputSchema.properties as Record<string, any>).map(([paramName, schema]) => {
+							const isRequired =
+								tool.inputSchema &&
+								"required" in tool.inputSchema &&
+								Array.isArray(tool.inputSchema.required) &&
+								tool.inputSchema.required.includes(paramName)
 
-								return (
-									<div
-										key={paramName}
+							return (
+								<div
+									key={paramName}
+									style={{
+										display: "flex",
+										alignItems: "baseline",
+										marginTop: "4px",
+									}}>
+									<code
 										style={{
-											display: "flex",
-											alignItems: "baseline",
-											marginTop: "4px",
+											color: "var(--vscode-textPreformat-foreground)",
+											marginRight: "8px",
 										}}>
-										<code
-											style={{
-												color: "var(--vscode-textPreformat-foreground)",
-												marginRight: "8px",
-											}}>
-											{paramName}
-											{isRequired && (
-												<span style={{ color: "var(--vscode-errorForeground)" }}>*</span>
-											)}
-										</code>
-										<span
-											style={{
-												opacity: 0.8,
-												overflowWrap: "break-word",
-												wordBreak: "break-word",
-											}}>
-											{schema.description || t("mcp:tool.noDescription")}
-										</span>
-									</div>
-								)
-							},
-						)}
+										{paramName}
+										{isRequired && (
+											<span
+												style={{
+													color: "var(--vscode-errorForeground)",
+												}}>
+												*
+											</span>
+										)}
+									</code>
+									<span
+										style={{
+											opacity: 0.8,
+											overflowWrap: "break-word",
+											wordBreak: "break-word",
+										}}>
+										{schema.description || "No description"}
+									</span>
+								</div>
+							)
+						})}
 					</div>
 				)}
 		</div>

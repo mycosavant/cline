@@ -1,138 +1,445 @@
-import * as vscode from "vscode"
-import * as dotenvx from "@dotenvx/dotenvx"
-import * as path from "path"
+// The module 'vscode' contains the VS Code extensibility API
+// Import the module and reference it with the alias vscode in your code below
+import { klausController } from './core/controller/KlausController'; 
+import { findEnclosingFunctionOrClass } from './utils/codeParser'; // Placeholder for parsing logic
 
-// Load environment variables from .env file
-try {
-	// Specify path to .env file in the project root directory
-	const envPath = path.join(__dirname, "..", ".env")
-	dotenvx.config({ path: envPath })
-} catch (e) {
-	// Silently handle environment loading errors
-	console.warn("Failed to load environment variables:", e)
+import { setTimeout as setTimeoutPromise } from "node:timers/promises"
+import * as vscode from "vscode"
+import { Logger } from "./services/logging/Logger"
+import { createKlausAPI } from "./exports"
+import "./utils/path" // necessary to have access to String.prototype.toPosix
+import { DIFF_VIEW_URI_SCHEME } from "./integrations/editor/DiffViewProvider"
+import assert from "node:assert"
+import { telemetryService } from "./services/telemetry/TelemetryService"
+import { WebviewProvider } from "./core/webview"
+import { registerDocstringProvider } from './features/docstringGeneration'; // Import the new registration function
+// ... potentially import TreeSitterParser setup/init functions if needed globally
+
+/*
+Built using https://github.com/microsoft/vscode-webview-ui-toolkit
+
+Inspired by
+https://github.com/microsoft/vscode-webview-ui-toolkit-samples/tree/main/default/weather-webview
+https://github.com/microsoft/vscode-webview-ui-toolkit-samples/tree/main/frameworks/hello-world-react-cra
+
+*/
+
+// 1. Register Code Action Provider
+export function registerDocstringProvider(context: vscode.ExtensionContext) {
+    context.subscriptions.push(
+        vscode.languages.registerCodeActionsProvider(
+            SUPPORTED_LANGUAGES,
+            new KlausDocstringActionProvider(),
+            {
+                providedCodeActionKinds: [vscode.CodeActionKind.RefactorRewrite],
+            }
+        )
+    );
+
+    // 2. Register the Command Handler
+    context.subscriptions.push(
+        vscode.commands.registerCommand('klaus.generateDocstringAction', generateDocstringCommandHandler)
+    );
 }
 
-import "./utils/path" // Necessary to have access to String.prototype.toPosix.
-
-import { initializeI18n } from "./i18n"
-import { ContextProxy } from "./core/config/ContextProxy"
-import { ClineProvider } from "./core/webview/ClineProvider"
-import { CodeActionProvider } from "./core/CodeActionProvider"
-import { DIFF_VIEW_URI_SCHEME } from "./integrations/editor/DiffViewProvider"
-import { McpServerManager } from "./services/mcp/McpServerManager"
-import { telemetryService } from "./services/telemetry/TelemetryService"
-import { TerminalRegistry } from "./integrations/terminal/TerminalRegistry"
-import { API } from "./exports/api"
-import { migrateSettings } from "./utils/migrateSettings"
-
-import { handleUri, registerCommands, registerCodeActions, registerTerminalActions } from "./activate"
-import { formatLanguage } from "./shared/language"
-
-/**
- * Built using https://github.com/microsoft/vscode-webview-ui-toolkit
- *
- * Inspired by:
- *  - https://github.com/microsoft/vscode-webview-ui-toolkit-samples/tree/main/default/weather-webview
- *  - https://github.com/microsoft/vscode-webview-ui-toolkit-samples/tree/main/frameworks/hello-world-react-cra
- */
-
 let outputChannel: vscode.OutputChannel
-let extensionContext: vscode.ExtensionContext
-
-// This method is called when your extension is activated.
-// Your extension is activated the very first time the command is executed.
-export async function activate(context: vscode.ExtensionContext) {
-	extensionContext = context
-	outputChannel = vscode.window.createOutputChannel("Roo-Code")
+let klausController: KlausController; 
+// This method is called when your extension is activated
+// Your extension is activated the very first time the command is executed
+export function activate(context: vscode.ExtensionContext) {
+	outputChannel = vscode.window.createOutputChannel("Klaus")
 	context.subscriptions.push(outputChannel)
-	outputChannel.appendLine("Roo-Code extension activated")
 
-	// Migrate old settings to new
-	await migrateSettings(context, outputChannel)
+	Logger.initialize(outputChannel)
+	Logger.log("Klaus extension activated")
 
-	// Initialize telemetry service after environment variables are loaded.
-	telemetryService.initialize()
+	const sidebarWebview = new WebviewProvider(context, outputChannel)
 
-	// Initialize i18n for internationalization support
-	initializeI18n(context.globalState.get("language") ?? formatLanguage(vscode.env.language))
-
-	// Initialize terminal shell execution handlers.
-	TerminalRegistry.initialize()
-
-	// Get default commands from configuration.
-	const defaultCommands = vscode.workspace.getConfiguration("roo-cline").get<string[]>("allowedCommands") || []
-
-	// Initialize global state if not already set.
-	if (!context.globalState.get("allowedCommands")) {
-		context.globalState.update("allowedCommands", defaultCommands)
-	}
-
-	const contextProxy = await ContextProxy.getInstance(context)
-	const provider = new ClineProvider(context, outputChannel, "sidebar", contextProxy)
-	telemetryService.setProvider(provider)
+	vscode.commands.executeCommand("setContext", "klaus.isDevMode", IS_DEV && IS_DEV === "true")
 
 	context.subscriptions.push(
-		vscode.window.registerWebviewViewProvider(ClineProvider.sideBarId, provider, {
+		vscode.window.registerWebviewViewProvider(WebviewProvider.sideBarId, sidebarWebview, {
 			webviewOptions: { retainContextWhenHidden: true },
 		}),
 	)
 
-	registerCommands({ context, outputChannel, provider })
+	context.subscriptions.push(
+		vscode.commands.registerCommand("klaus.plusButtonClicked", async (webview: any) => {
+			const openChat = async (instance?: WebviewProvider) => {
+				await instance?.controller.clearTask()
+				await instance?.controller.postStateToWebview()
+				await instance?.controller.postMessageToWebview({
+					type: "action",
+					action: "chatButtonClicked",
+				})
+			}
+			const isSidebar = !webview
+			if (isSidebar) {
+				openChat(WebviewProvider.getSidebarInstance())
+			} else {
+				WebviewProvider.getTabInstances().forEach(openChat)
+			}
+		}),
+	)
 
-	/**
-	 * We use the text document content provider API to show the left side for diff
-	 * view by creating a virtual document for the original content. This makes it
-	 * readonly so users know to edit the right side if they want to keep their changes.
-	 *
-	 * This API allows you to create readonly documents in VSCode from arbitrary
-	 * sources, and works by claiming an uri-scheme for which your provider then
-	 * returns text contents. The scheme must be provided when registering a
-	 * provider and cannot change afterwards.
-	 *
-	 * Note how the provider doesn't create uris for virtual documents - its role
-	 * is to provide contents given such an uri. In return, content providers are
-	 * wired into the open document logic so that providers are always considered.
-	 *
-	 * https://code.visualstudio.com/api/extension-guides/virtual-documents
-	 */
+	context.subscriptions.push(
+		vscode.commands.registerCommand("klaus.mcpButtonClicked", (webview: any) => {
+			const openMcp = (instance?: WebviewProvider) =>
+				instance?.controller.postMessageToWebview({
+					type: "action",
+					action: "mcpButtonClicked",
+				})
+			const isSidebar = !webview
+			if (isSidebar) {
+				openMcp(WebviewProvider.getSidebarInstance())
+			} else {
+				WebviewProvider.getTabInstances().forEach(openMcp)
+			}
+		}),
+	)
+
+	const openKlausInNewTab = async () => {
+		Logger.log("Opening Klaus in new tab")
+		// (this example uses webviewProvider activation event which is necessary to deserialize cached webview, but since we use retainContextWhenHidden, we don't need to use that event)
+		// https://github.com/microsoft/vscode-extension-samples/blob/main/webview-sample/src/extension.ts
+		const tabWebview = new WebviewProvider(context, outputChannel)
+		//const column = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : undefined
+		const lastCol = Math.max(...vscode.window.visibleTextEditors.map((editor) => editor.viewColumn || 0))
+
+		// Check if there are any visible text editors, otherwise open a new group to the right
+		const hasVisibleEditors = vscode.window.visibleTextEditors.length > 0
+		if (!hasVisibleEditors) {
+			await vscode.commands.executeCommand("workbench.action.newGroupRight")
+		}
+		const targetCol = hasVisibleEditors ? Math.max(lastCol + 1, 1) : vscode.ViewColumn.Two
+
+		const panel = vscode.window.createWebviewPanel(WebviewProvider.tabPanelId, "Klaus", targetCol, {
+			enableScripts: true,
+			retainContextWhenHidden: true,
+			localResourceRoots: [context.extensionUri],
+		})
+		// TODO: use better svg icon with light and dark variants (see https://stackoverflow.com/questions/58365687/vscode-extension-iconpath)
+
+		panel.iconPath = {
+			light: vscode.Uri.joinPath(context.extensionUri, "assets", "icons", "robot_panel_light.png"),
+			dark: vscode.Uri.joinPath(context.extensionUri, "assets", "icons", "robot_panel_dark.png"),
+		}
+		tabWebview.resolveWebviewView(panel)
+
+		// Lock the editor group so clicking on files doesn't open them over the panel
+		await setTimeoutPromise(100)
+		await vscode.commands.executeCommand("workbench.action.lockEditorGroup")
+	}
+
+	context.subscriptions.push(vscode.commands.registerCommand("klaus.popoutButtonClicked", openKlausInNewTab))
+	context.subscriptions.push(vscode.commands.registerCommand("klaus.openInNewTab", openKlausInNewTab))
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("klaus.settingsButtonClicked", (webview: any) => {
+			WebviewProvider.getAllInstances().forEach((instance) => {
+				const openSettings = async (instance?: WebviewProvider) => {
+					instance?.controller.postMessageToWebview({
+						type: "action",
+						action: "settingsButtonClicked",
+					})
+				}
+				const isSidebar = !webview
+				if (isSidebar) {
+					openSettings(WebviewProvider.getSidebarInstance())
+				} else {
+					WebviewProvider.getTabInstances().forEach(openSettings)
+				}
+			})
+		}),
+	)
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("klaus.historyButtonClicked", (webview: any) => {
+			WebviewProvider.getAllInstances().forEach((instance) => {
+				const openHistory = async (instance?: WebviewProvider) => {
+					instance?.controller.postMessageToWebview({
+						type: "action",
+						action: "historyButtonClicked",
+					})
+				}
+				const isSidebar = !webview
+				if (isSidebar) {
+					openHistory(WebviewProvider.getSidebarInstance())
+				} else {
+					WebviewProvider.getTabInstances().forEach(openHistory)
+				}
+			})
+		}),
+	)
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand("klaus.accountButtonClicked", (webview: any) => {
+			WebviewProvider.getAllInstances().forEach((instance) => {
+				const openAccount = async (instance?: WebviewProvider) => {
+					instance?.controller.postMessageToWebview({
+						type: "action",
+						action: "accountButtonClicked",
+					})
+				}
+				const isSidebar = !webview
+				if (isSidebar) {
+					openAccount(WebviewProvider.getSidebarInstance())
+				} else {
+					WebviewProvider.getTabInstances().forEach(openAccount)
+				}
+			})
+		}),
+	)
+
+	/*
+	We use the text document content provider API to show the left side for diff view by creating a virtual document for the original content. This makes it readonly so users know to edit the right side if they want to keep their changes.
+
+	- This API allows you to create readonly documents in VSCode from arbitrary sources, and works by claiming an uri-scheme for which your provider then returns text contents. The scheme must be provided when registering a provider and cannot change afterwards.
+	- Note how the provider doesn't create uris for virtual documents - its role is to provide contents given such an uri. In return, content providers are wired into the open document logic so that providers are always considered.
+	https://code.visualstudio.com/api/extension-guides/virtual-documents
+	*/
 	const diffContentProvider = new (class implements vscode.TextDocumentContentProvider {
 		provideTextDocumentContent(uri: vscode.Uri): string {
 			return Buffer.from(uri.query, "base64").toString("utf-8")
 		}
 	})()
+	context.subscriptions.push(vscode.workspace.registerTextDocumentContentProvider(DIFF_VIEW_URI_SCHEME, diffContentProvider))
 
-	context.subscriptions.push(
-		vscode.workspace.registerTextDocumentContentProvider(DIFF_VIEW_URI_SCHEME, diffContentProvider),
-	)
+	// URI Handler
+	const handleUri = async (uri: vscode.Uri) => {
+		console.log("URI Handler called with:", {
+			path: uri.path,
+			query: uri.query,
+			scheme: uri.scheme,
+		})
 
+		const path = uri.path
+		const query = new URLSearchParams(uri.query.replace(/\+/g, "%2B"))
+		const visibleWebview = WebviewProvider.getVisibleInstance()
+		if (!visibleWebview) {
+			return
+		}
+		switch (path) {
+			case "/openrouter": {
+				const code = query.get("code")
+				if (code) {
+					await visibleWebview?.controller.handleOpenRouterCallback(code)
+				}
+				break
+			}
+			case "/auth": {
+				const token = query.get("token")
+				const state = query.get("state")
+				const apiKey = query.get("apiKey")
+
+				console.log("Auth callback received:", {
+					token: token,
+					state: state,
+					apiKey: apiKey,
+				})
+
+				// Validate state parameter
+				if (!(await visibleWebview?.controller.validateAuthState(state))) {
+					vscode.window.showErrorMessage("Invalid auth state")
+					return
+				}
+
+				if (token && apiKey) {
+					await visibleWebview?.controller.handleAuthCallback(token, apiKey)
+				}
+				break
+			}
+			default:
+				break
+		}
+	}
 	context.subscriptions.push(vscode.window.registerUriHandler({ handleUri }))
 
-	// Register code actions provider.
+	// Register size testing commands in development mode
+	if (IS_DEV && IS_DEV === "true") {
+		// Use dynamic import to avoid loading the module in production
+		import("./dev/commands/tasks")
+			.then((module) => {
+				const devTaskCommands = module.registerTaskCommands(context, sidebarWebview.controller)
+				context.subscriptions.push(...devTaskCommands)
+				Logger.log("Klaus dev task commands registered")
+			})
+			.catch((error) => {
+				Logger.log("Failed to register dev task commands: " + error)
+			})
+	}
+
 	context.subscriptions.push(
-		vscode.languages.registerCodeActionsProvider({ pattern: "**/*" }, new CodeActionProvider(), {
-			providedCodeActionKinds: CodeActionProvider.providedCodeActionKinds,
+		vscode.commands.registerCommand("klaus.addToChat", async (range?: vscode.Range, diagnostics?: vscode.Diagnostic[]) => {
+			const editor = vscode.window.activeTextEditor
+			if (!editor) {
+				return
+			}
+
+			// Use provided range if available, otherwise use current selection
+			// (vscode command passes an argument in the first param by default, so we need to ensure it's a Range object)
+			const textRange = range instanceof vscode.Range ? range : editor.selection
+			const selectedText = editor.document.getText(textRange)
+
+			if (!selectedText) {
+				return
+			}
+
+			// Get the file path and language ID
+			const filePath = editor.document.uri.fsPath
+			const languageId = editor.document.languageId
+
+			const visibleWebview = WebviewProvider.getVisibleInstance()
+			await visibleWebview?.controller.addSelectedCodeToChat(
+				selectedText,
+				filePath,
+				languageId,
+				Array.isArray(diagnostics) ? diagnostics : undefined,
+			)
 		}),
 	)
 
-	registerCodeActions(context)
-	registerTerminalActions(context)
+	context.subscriptions.push(
+		vscode.commands.registerCommand("klaus.addTerminalOutputToChat", async () => {
+			const terminal = vscode.window.activeTerminal
+			if (!terminal) {
+				return
+			}
 
-	// Allows other extensions to activate once Roo is ready.
-	vscode.commands.executeCommand("roo-cline.activationCompleted")
+			// Save current clipboard content
+			const tempCopyBuffer = await vscode.env.clipboard.readText()
 
-	// Implements the `RooCodeAPI` interface.
-	const socketPath = process.env.ROO_CODE_IPC_SOCKET_PATH
-	const enableLogging = typeof socketPath === "string"
-	return new API(outputChannel, provider, socketPath, enableLogging)
+			try {
+				// Copy the *existing* terminal selection (without selecting all)
+				await vscode.commands.executeCommand("workbench.action.terminal.copySelection")
+
+				// Get copied content
+				let terminalContents = (await vscode.env.clipboard.readText()).trim()
+
+				// Restore original clipboard content
+				await vscode.env.clipboard.writeText(tempCopyBuffer)
+
+				if (!terminalContents) {
+					// No terminal content was copied (either nothing selected or some error)
+					return
+				}
+
+				// [Optional] Any additional logic to process multi-line content can remain here
+				// For example:
+				/*
+				const lines = terminalContents.split("\n")
+				const lastLine = lines.pop()?.trim()
+				if (lastLine) {
+					let i = lines.length - 1
+					while (i >= 0 && !lines[i].trim().startsWith(lastLine)) {
+						i--
+					}
+					terminalContents = lines.slice(Math.max(i, 0)).join("\n")
+				}
+				*/
+
+				// Send to sidebar provider
+				const visibleWebview = WebviewProvider.getVisibleInstance()
+				await visibleWebview?.controller.addSelectedTerminalOutputToChat(terminalContents, terminal.name)
+			} catch (error) {
+				// Ensure clipboard is restored even if an error occurs
+				await vscode.env.clipboard.writeText(tempCopyBuffer)
+				console.error("Error getting terminal contents:", error)
+				vscode.window.showErrorMessage("Failed to get terminal contents")
+			}
+		}),
+	)
+
+	// Register code action provider
+	context.subscriptions.push(
+		vscode.languages.registerCodeActionsProvider(
+			"*",
+			new (class implements vscode.CodeActionProvider {
+				public static readonly providedCodeActionKinds = [vscode.CodeActionKind.QuickFix]
+
+				provideCodeActions(
+					document: vscode.TextDocument,
+					range: vscode.Range,
+					context: vscode.CodeActionContext,
+				): vscode.CodeAction[] {
+					// Expand range to include surrounding 3 lines
+					const expandedRange = new vscode.Range(
+						Math.max(0, range.start.line - 3),
+						0,
+						Math.min(document.lineCount - 1, range.end.line + 3),
+						document.lineAt(Math.min(document.lineCount - 1, range.end.line + 3)).text.length,
+					)
+
+					const addAction = new vscode.CodeAction("Add to Klaus", vscode.CodeActionKind.QuickFix)
+					addAction.command = {
+						command: "klaus.addToChat",
+						title: "Add to Klaus",
+						arguments: [expandedRange, context.diagnostics],
+					}
+
+					const fixAction = new vscode.CodeAction("Fix with Klaus", vscode.CodeActionKind.QuickFix)
+					fixAction.command = {
+						command: "klaus.fixWithKlaus",
+						title: "Fix with Klaus",
+						arguments: [expandedRange, context.diagnostics],
+					}
+
+					// Only show actions when there are errors
+					if (context.diagnostics.length > 0) {
+						return [addAction, fixAction]
+					} else {
+						return []
+					}
+				}
+			})(),
+			{
+				providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
+			},
+		),
+	)
+
+	// Register the command handler
+	context.subscriptions.push(
+		vscode.commands.registerCommand("klaus.fixWithKlaus", async (range: vscode.Range, diagnostics: any[]) => {
+			const editor = vscode.window.activeTextEditor
+			if (!editor) {
+				return
+			}
+
+			const selectedText = editor.document.getText(range)
+			const filePath = editor.document.uri.fsPath
+			const languageId = editor.document.languageId
+
+			// Send to sidebar provider with diagnostics
+			const visibleWebview = WebviewProvider.getVisibleInstance()
+			await visibleWebview?.controller.fixWithKlaus(selectedText, filePath, languageId, diagnostics)
+		}),
+	)
+
+	return createKlausAPI(outputChannel, sidebarWebview.controller)
 }
 
 // This method is called when your extension is deactivated
-export async function deactivate() {
-	outputChannel.appendLine("Roo-Code extension deactivated")
-	// Clean up MCP server manager
-	await McpServerManager.cleanup(extensionContext)
+export function deactivate() {
 	telemetryService.shutdown()
+	Logger.log("Klaus extension deactivated")
+}
 
-	// Clean up terminal handlers
-	TerminalRegistry.cleanup()
+// TODO: Find a solution for automatically removing DEV related content from production builds.
+//  This type of code is fine in production to keep. We just will want to remove it from production builds
+//  to bring down built asset sizes.
+//
+// This is a workaround to reload the extension when the source code changes
+// since vscode doesn't support hot reload for extensions
+const { IS_DEV, DEV_WORKSPACE_FOLDER } = process.env
+
+if (IS_DEV && IS_DEV !== "false") {
+	assert(DEV_WORKSPACE_FOLDER, "DEV_WORKSPACE_FOLDER must be set in development")
+	const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(DEV_WORKSPACE_FOLDER, "src/**/*"))
+
+	watcher.onDidChange(({ scheme, path }) => {
+		console.info(`${scheme} ${path} changed. Reloading VSCode...`)
+
+		vscode.commands.executeCommand("workbench.action.reloadWindow")
+	})
 }

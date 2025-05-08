@@ -1,21 +1,15 @@
 import { Anthropic } from "@anthropic-ai/sdk"
-import * as path from "path"
 import * as diff from "diff"
-import { RooIgnoreController, LOCK_TEXT_SYMBOL } from "../ignore/RooIgnoreController"
+import * as path from "path"
+import { KlausIgnoreController, LOCK_TEXT_SYMBOL } from "../ignore/KlausIgnoreController"
 
 export const formatResponse = {
 	toolDenied: () => `The user denied this operation.`,
 
-	toolDeniedWithFeedback: (feedback?: string) =>
-		`The user denied this operation and provided the following feedback:\n<feedback>\n${feedback}\n</feedback>`,
-
-	toolApprovedWithFeedback: (feedback?: string) =>
-		`The user approved this operation and provided the following context:\n<feedback>\n${feedback}\n</feedback>`,
-
 	toolError: (error?: string) => `The tool execution failed with the following error:\n<error>\n${error}\n</error>`,
 
-	rooIgnoreError: (path: string) =>
-		`Access to ${path} is blocked by the .rooignore file settings. You must try to continue in the task without using this file, or ask the user to update the .rooignore file.`,
+	KlausIgnoreError: (path: string) =>
+		`Access to ${path} is blocked by the .Klausignore file settings. You must try to continue in the task without using this file, or ask the user to update the .Klausignore file.`,
 
 	noToolsUsed: () =>
 		`[ERROR] You did not use a tool in your previous response! Please retry with a tool use.
@@ -35,46 +29,10 @@ Otherwise, if you have not completed the task and do not need additional informa
 	missingToolParameterError: (paramName: string) =>
 		`Missing value for required parameter '${paramName}'. Please retry with complete response.\n\n${toolUseInstructionsReminder}`,
 
-	lineCountTruncationError: (actualLineCount: number, isNewFile: boolean, diffStrategyEnabled: boolean = false) => {
-		const truncationMessage = `Note: Your response may have been truncated because it exceeded your output limit. You wrote ${actualLineCount} lines of content, but the line_count parameter was either missing or not included in your response.`
-
-		const newFileGuidance =
-			`This appears to be a new file.\n` +
-			`${truncationMessage}\n\n` +
-			`RECOMMENDED APPROACH:\n` +
-			`1. Try again with the line_count parameter in your response if you forgot to include it\n` +
-			`2. Or break your content into smaller chunks - first use write_to_file with the initial chunk\n` +
-			`3. Then use insert_content to append additional chunks\n`
-
-		let existingFileApproaches = [
-			`1. Try again with the line_count parameter in your response if you forgot to include it`,
-		]
-
-		if (diffStrategyEnabled) {
-			existingFileApproaches.push(`2. Or try using apply_diff instead of write_to_file for targeted changes`)
-		}
-
-		existingFileApproaches.push(
-			`${diffStrategyEnabled ? "3" : "2"}. Or use search_and_replace for specific text replacements`,
-			`${diffStrategyEnabled ? "4" : "3"}. Or use insert_content to add specific content at particular lines`,
-		)
-
-		const existingFileGuidance =
-			`This appears to be content for an existing file.\n` +
-			`${truncationMessage}\n\n` +
-			`RECOMMENDED APPROACH:\n` +
-			`${existingFileApproaches.join("\n")}\n`
-
-		return `${isNewFile ? newFileGuidance : existingFileGuidance}\n${toolUseInstructionsReminder}`
-	},
-
 	invalidMcpToolArgumentError: (serverName: string, toolName: string) =>
 		`Invalid JSON argument used with ${serverName} for ${toolName}. Please retry with a properly formatted JSON argument.`,
 
-	toolResult: (
-		text: string,
-		images?: string[],
-	): string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> => {
+	toolResult: (text: string, images?: string[]): string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> => {
 		if (images && images.length > 0) {
 			const textBlock: Anthropic.TextBlockParam = { type: "text", text }
 			const imageBlocks: Anthropic.ImageBlockParam[] = formatImagesIntoBlocks(images)
@@ -93,8 +51,7 @@ Otherwise, if you have not completed the task and do not need additional informa
 		absolutePath: string,
 		files: string[],
 		didHitLimit: boolean,
-		rooIgnoreController: RooIgnoreController | undefined,
-		showRooIgnoredFiles: boolean,
+		KlausIgnoreController?: KlausIgnoreController,
 	): string => {
 		const sorted = files
 			.map((file) => {
@@ -102,7 +59,7 @@ Otherwise, if you have not completed the task and do not need additional informa
 				const relativePath = path.relative(absolutePath, file).toPosix()
 				return file.endsWith("/") ? relativePath + "/" : relativePath
 			})
-			// Sort so files are listed under their respective directories to make it clear what files are children of what directories. Since we build file list top down, even if file list is truncated it will show directories that cline can then explore further.
+			// Sort so files are listed under their respective directories to make it clear what files are children of what directories. Since we build file list top down, even if file list is truncated it will show directories that Klaus can then explore further.
 			.sort((a, b) => {
 				const aParts = a.split("/") // only works if we use toPosix first
 				const bParts = b.split("/")
@@ -116,7 +73,10 @@ Otherwise, if you have not completed the task and do not need additional informa
 							return 1
 						}
 						// Otherwise, sort alphabetically
-						return aParts[i].localeCompare(bParts[i], undefined, { numeric: true, sensitivity: "base" })
+						return aParts[i].localeCompare(bParts[i], undefined, {
+							numeric: true,
+							sensitivity: "base",
+						})
 					}
 				}
 				// If all parts are the same up to the length of the shorter path,
@@ -124,37 +84,29 @@ Otherwise, if you have not completed the task and do not need additional informa
 				return aParts.length - bParts.length
 			})
 
-		let rooIgnoreParsed: string[] = sorted
-
-		if (rooIgnoreController) {
-			rooIgnoreParsed = []
-			for (const filePath of sorted) {
-				// path is relative to absolute path, not cwd
-				// validateAccess expects either path relative to cwd or absolute path
-				// otherwise, for validating against ignore patterns like "assets/icons", we would end up with just "icons", which would result in the path not being ignored.
-				const absoluteFilePath = path.resolve(absolutePath, filePath)
-				const isIgnored = !rooIgnoreController.validateAccess(absoluteFilePath)
-
-				if (isIgnored) {
-					// If file is ignored and we're not showing ignored files, skip it
-					if (!showRooIgnoredFiles) {
-						continue
+		const KlausIgnoreParsed = KlausIgnoreController
+			? sorted.map((filePath) => {
+					// path is relative to absolute path, not cwd
+					// validateAccess expects either path relative to cwd or absolute path
+					// otherwise, for validating against ignore patterns like "assets/icons", we would end up with just "icons", which would result in the path not being ignored.
+					const absoluteFilePath = path.resolve(absolutePath, filePath)
+					const isIgnored = !KlausIgnoreController.validateAccess(absoluteFilePath)
+					if (isIgnored) {
+						return LOCK_TEXT_SYMBOL + " " + filePath
 					}
-					// Otherwise, mark it with a lock symbol
-					rooIgnoreParsed.push(LOCK_TEXT_SYMBOL + " " + filePath)
-				} else {
-					rooIgnoreParsed.push(filePath)
-				}
-			}
-		}
+
+					return filePath
+				})
+			: sorted
+
 		if (didHitLimit) {
-			return `${rooIgnoreParsed.join(
+			return `${KlausIgnoreParsed.join(
 				"\n",
 			)}\n\n(File list truncated. Use list_files on specific subdirectories if you need to explore further.)`
-		} else if (rooIgnoreParsed.length === 0 || (rooIgnoreParsed.length === 1 && rooIgnoreParsed[0] === "")) {
+		} else if (KlausIgnoreParsed.length === 0 || (KlausIgnoreParsed.length === 1 && KlausIgnoreParsed[0] === "")) {
 			return "No files found."
 		} else {
-			return rooIgnoreParsed.join("\n")
+			return KlausIgnoreParsed.join("\n")
 		}
 	},
 
@@ -165,6 +117,88 @@ Otherwise, if you have not completed the task and do not need additional informa
 		const prettyPatchLines = lines.slice(4)
 		return prettyPatchLines.join("\n")
 	},
+
+	taskResumption: (
+		mode: "plan" | "act",
+		agoText: string,
+		cwd: string,
+		wasRecent: boolean | 0 | undefined,
+		responseText?: string,
+	) => {
+		return `[TASK RESUMPTION] ${
+			mode === "plan"
+				? `This task was interrupted ${agoText}. The conversation may have been incomplete. Be aware that the project state may have changed since then. The current working directory is now '${cwd.toPosix()}'.\n\nNote: If you previously attempted a tool use that the user did not provide a result for, you should assume the tool use was not successful. However you are in PLAN MODE, so rather than continuing the task, you must respond to the user's message.`
+				: `This task was interrupted ${agoText}. It may or may not be complete, so please reassess the task context. Be aware that the project state may have changed since then. The current working directory is now '${cwd.toPosix()}'. If the task has not been completed, retry the last step before interruption and proceed with completing the task.\n\nNote: If you previously attempted a tool use that the user did not provide a result for, you should assume the tool use was not successful and assess whether you should retry. If the last tool was a browser_action, the browser has been closed and you must launch a new browser if needed.`
+		}${
+			wasRecent
+				? "\n\nIMPORTANT: If the last tool use was a replace_in_file or write_to_file that was interrupted, the file was reverted back to its original state before the interrupted edit, and you do NOT need to re-read the file as you already have its up-to-date contents."
+				: ""
+		}${
+			responseText
+				? `\n\n${mode === "plan" ? "New message to respond to with plan_mode_respond tool (be sure to provide your response in the <response> parameter)" : "New instructions for task continuation"}:\n<user_message>\n${responseText}\n</user_message>`
+				: mode === "plan"
+					? "(The user did not provide a new message. Consider asking them how they'd like you to proceed, or to switch to Act mode to continue with the task.)"
+					: ""
+		}`
+	},
+
+	planModeInstructions: () => {
+		return `In this mode you should focus on information gathering, asking questions, and architecting a solution. Once you have a plan, use the plan_mode_respond tool to engage in a conversational back and forth with the user. Do not use the plan_mode_respond tool until you've gathered all the information you need e.g. with read_file or ask_followup_question.
+(Remember: If it seems the user wants you to use tools only available in Act Mode, you should ask the user to "toggle to Act mode" (use those words) - they will have to manually do this themselves with the Plan/Act toggle button below. You do not have the ability to switch to Act Mode yourself, and must wait for the user to do it themselves once they are satisfied with the plan. You also cannot present an option to toggle to Act mode, as this will be something you need to direct the user to do manually themselves.)`
+	},
+
+	fileEditWithUserChanges: (
+		relPath: string,
+		userEdits: string,
+		autoFormattingEdits: string | undefined,
+		finalContent: string | undefined,
+		newProblemsMessage: string | undefined,
+	) =>
+		`The user made the following updates to your content:\n\n${userEdits}\n\n` +
+		(autoFormattingEdits
+			? `The user's editor also applied the following auto-formatting to your content:\n\n${autoFormattingEdits}\n\n(Note: Pay close attention to changes such as single quotes being converted to double quotes, semicolons being removed or added, long lines being broken into multiple lines, adjusting indentation style, adding/removing trailing commas, etc. This will help you ensure future SEARCH/REPLACE operations to this file are accurate.)\n\n`
+			: "") +
+		`The updated content, which includes both your original modifications and the additional edits, has been successfully saved to ${relPath.toPosix()}. Here is the full, updated content of the file that was saved:\n\n` +
+		`<final_file_content path="${relPath.toPosix()}">\n${finalContent}\n</final_file_content>\n\n` +
+		`Please note:\n` +
+		`1. You do not need to re-write the file with these changes, as they have already been applied.\n` +
+		`2. Proceed with the task using this updated file content as the new baseline.\n` +
+		`3. If the user's edits have addressed part of the task or changed the requirements, adjust your approach accordingly.` +
+		`4. IMPORTANT: For any future changes to this file, use the final_file_content shown above as your reference. This content reflects the current state of the file, including both user edits and any auto-formatting (e.g., if you used single quotes but the formatter converted them to double quotes). Always base your SEARCH/REPLACE operations on this final version to ensure accuracy.\n` +
+		`${newProblemsMessage}`,
+
+	fileEditWithoutUserChanges: (
+		relPath: string,
+		autoFormattingEdits: string | undefined,
+		finalContent: string | undefined,
+		newProblemsMessage: string | undefined,
+	) =>
+		`The content was successfully saved to ${relPath.toPosix()}.\n\n` +
+		(autoFormattingEdits
+			? `Along with your edits, the user's editor applied the following auto-formatting to your content:\n\n${autoFormattingEdits}\n\n(Note: Pay close attention to changes such as single quotes being converted to double quotes, semicolons being removed or added, long lines being broken into multiple lines, adjusting indentation style, adding/removing trailing commas, etc. This will help you ensure future SEARCH/REPLACE operations to this file are accurate.)\n\n`
+			: "") +
+		`Here is the full, updated content of the file that was saved:\n\n` +
+		`<final_file_content path="${relPath.toPosix()}">\n${finalContent}\n</final_file_content>\n\n` +
+		`IMPORTANT: For any future changes to this file, use the final_file_content shown above as your reference. This content reflects the current state of the file, including any auto-formatting (e.g., if you used single quotes but the formatter converted them to double quotes). Always base your SEARCH/REPLACE operations on this final version to ensure accuracy.\n\n` +
+		`${newProblemsMessage}`,
+
+	diffError: (relPath: string, originalContent: string | undefined) =>
+		`This is likely because the SEARCH block content doesn't match exactly with what's in the file, or if you used multiple SEARCH/REPLACE blocks they may not have been in the order they appear in the file.\n\n` +
+		`The file was reverted to its original state:\n\n` +
+		`<file_content path="${relPath.toPosix()}">\n${originalContent}\n</file_content>\n\n` +
+		`Now that you have the latest state of the file, try the operation again with fewer SEARCH blocks, or more precise SEARCH blocks.\n(Use the write_to_file tool as a fallback if you determine that replace_in_file will be unsuccessful. Keep in mind, the write_to_file fallback is far from ideal, as this means you'll be re-writing the entire contents of the file just to make a few edits, which takes time and money, but making multiple API calls may be more costly. So, THINK and choose wisely, prefering use of replace_in_file)`,
+
+	toolAlreadyUsed: (toolName: string) =>
+		`Tool [${toolName}] was not executed because a tool has already been used in this message. Only one tool may be used per message. You must assess the first tool's result before proceeding to use the next tool.`,
+
+	KlausIgnoreInstructions: (content: string) =>
+		`# .Klausignore\n\n(The following is provided by a root-level .Klausignore file where the user has specified files and directories that should not be accessed. When using list_files, you'll notice a ${LOCK_TEXT_SYMBOL} next to files that are blocked. Attempting to access the file's contents e.g. through read_file will result in an error.)\n\n${content}\n.Klausignore`,
+
+	KlausRulesDirectoryInstructions: (cwd: string, content: string) =>
+		`# .Klausrules/\n\nThe following is provided by a root-level .Klausrules/ directory where the user has specified instructions for this working directory (${cwd.toPosix()})\n\n${content}`,
+
+	KlausRulesFileInstructions: (cwd: string, content: string) =>
+		`# .Klausrules\n\nThe following is provided by a root-level .Klausrules file where the user has specified instructions for this working directory (${cwd.toPosix()})\n\n${content}`,
 }
 
 // to avoid circular dependency
@@ -176,7 +210,11 @@ const formatImagesIntoBlocks = (images?: string[]): Anthropic.ImageBlockParam[] 
 				const mimeType = rest.split(":")[1].split(";")[0]
 				return {
 					type: "image",
-					source: { type: "base64", media_type: mimeType, data: base64 },
+					source: {
+						type: "base64",
+						media_type: mimeType,
+						data: base64,
+					},
 				} as Anthropic.ImageBlockParam
 			})
 		: []

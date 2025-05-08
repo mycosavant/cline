@@ -1,6 +1,5 @@
 import { exec } from "child_process"
 import { promisify } from "util"
-import { truncateOutput } from "../integrations/misc/extract-text"
 
 const execAsync = promisify(exec)
 const GIT_OUTPUT_LINE_LIMIT = 500
@@ -123,7 +122,7 @@ export async function getCommitInfo(hash: string, cwd: string): Promise<string> 
 		].join("\n")
 
 		const output = summary + "\n\n" + diff.trim()
-		return truncateOutput(output, GIT_OUTPUT_LINE_LIMIT)
+		return truncateOutput(output)
 	} catch (error) {
 		console.error("Error getting commit info:", error)
 		return `Failed to get commit info: ${error instanceof Error ? error.message : String(error)}`
@@ -150,11 +149,29 @@ export async function getWorkingState(cwd: string): Promise<string> {
 
 		// Get all changes (both staged and unstaged) compared to HEAD
 		const { stdout: diff } = await execAsync("git diff HEAD", { cwd })
-		const lineLimit = GIT_OUTPUT_LINE_LIMIT
 		const output = `Working directory changes:\n\n${status}\n\n${diff}`.trim()
-		return truncateOutput(output, lineLimit)
+		return truncateOutput(output)
 	} catch (error) {
 		console.error("Error getting working state:", error)
 		return `Failed to get working state: ${error instanceof Error ? error.message : String(error)}`
 	}
+}
+
+function truncateOutput(content: string): string {
+	if (!GIT_OUTPUT_LINE_LIMIT) {
+		return content
+	}
+
+	const lines = content.split("\n")
+	if (lines.length <= GIT_OUTPUT_LINE_LIMIT) {
+		return content
+	}
+
+	const beforeLimit = Math.floor(GIT_OUTPUT_LINE_LIMIT * 0.2) // 20% of lines before
+	const afterLimit = GIT_OUTPUT_LINE_LIMIT - beforeLimit // remaining 80% after
+	return [
+		...lines.slice(0, beforeLimit),
+		`\n[...${lines.length - GIT_OUTPUT_LINE_LIMIT} lines omitted...]\n`,
+		...lines.slice(-afterLimit),
+	].join("\n")
 }

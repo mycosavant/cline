@@ -1,10 +1,7 @@
-import { TextContent, ToolUse, ToolParamName, toolParamNames } from "../../shared/tools"
-import { toolNames, ToolName } from "../../schemas"
-
-export type AssistantMessageContent = TextContent | ToolUse
+import { AssistantMessageContent, TextContent, ToolUse, ToolParamName, toolParamNames, toolUseNames, ToolUseName } from "."
 
 export function parseAssistantMessage(assistantMessage: string) {
-	let contentBlocks: AssistantMessageContent[] = []
+	const contentBlocks: AssistantMessageContent[] = []
 	let currentTextContent: TextContent | undefined = undefined
 	let currentTextContentStartIndex = 0
 	let currentToolUse: ToolUse | undefined = undefined
@@ -65,9 +62,7 @@ export function parseAssistantMessage(assistantMessage: string) {
 					const contentStartIndex = toolContent.indexOf(contentStartTag) + contentStartTag.length
 					const contentEndIndex = toolContent.lastIndexOf(contentEndTag)
 					if (contentStartIndex !== -1 && contentEndIndex !== -1 && contentEndIndex > contentStartIndex) {
-						currentToolUse.params[contentParamName] = toolContent
-							.slice(contentStartIndex, contentEndIndex)
-							.trim()
+						currentToolUse.params[contentParamName] = toolContent.slice(contentStartIndex, contentEndIndex).trim()
 					}
 				}
 
@@ -79,13 +74,13 @@ export function parseAssistantMessage(assistantMessage: string) {
 		// no currentToolUse
 
 		let didStartToolUse = false
-		const possibleToolUseOpeningTags = toolNames.map((name) => `<${name}>`)
+		const possibleToolUseOpeningTags = toolUseNames.map((name) => `<${name}>`)
 		for (const toolUseOpeningTag of possibleToolUseOpeningTags) {
 			if (accumulator.endsWith(toolUseOpeningTag)) {
 				// start of a new tool use
 				currentToolUse = {
 					type: "tool_use",
-					name: toolUseOpeningTag.slice(1, -1) as ToolName,
+					name: toolUseOpeningTag.slice(1, -1) as ToolUseName,
 					params: {},
 					partial: true,
 				}

@@ -1,0 +1,48 @@
+## Key Capabilities and Tools:
+
+### File System Operations:
+-   `read_file`: Reads the contents of a file.
+-   `write_to_file`: Creates a new file or overwrites an existing one.
+-   `replace_in_file`: Makes targeted edits to specific parts of an existing file.
+-   `list_files`: Lists files and directories within a specified path.
+-   `search_files`: Performs regex searches across files in a directory.
+-   `list_code_definition_names`: Lists code definition names in source code files.
+### Terminal Operations:
+-   `execute_command`: Executes a CLI command on the system.
+### Browser Interaction:
+-   `browser_action`: Interacts with a Puppeteer-controlled browser.
+### MCP (Model Context Protocol) Integration:
+-   `use_mcp_tool`: Uses a tool provided by a connected MCP server.
+-   `access_mcp_resource`: Accesses a resource provided by a connected MCP server.
+### User Interaction:
+-   `ask_followup_question`: Asks the user a question to gather more information.
+-   `attempt_completion`: Presents the final result of the task to the user.
+-   `plan_mode_respond`: Used in PLAN MODE to respond to the user, discuss the task, and plan the solution.
+## Operational Modes:
+
+-   `ACT MODE`: The default mode where Klaus uses tools to accomplish the user's task.
+-   `PLAN MODE`: A mode for planning, gathering information, and discussing the task with the user before implementation.
+## MCP Server Management:
+
+-   Detailed instructions on creating, configuring, and using MCP servers to extend Klaus's capabilities.
+-   Examples of how to create an MCP server for weather data.
+-   Guidance on how to walk the user through obtaining API keys or other necessary credentials.
+-   Instructions on editing MCP server configurations.
+## File Editing Guidelines:
+
+-   Clear guidelines on when to use `write_to_file` vs. `replace_in_file`.
+-   Emphasis on using `replace_in_file` for most targeted edits and `write_to_file` for creating or overwriting entire files.
+-   Considerations for auto-formatting and how it affects the file content.
+## General Rules and Guidelines:
+
+-   Step-by-step approach, waiting for user confirmation after each tool use.
+-   Emphasis on using the most appropriate tool for each task.
+-   Rules against conversational fillers like "Great," "Okay," etc.
+-   Instructions to use the provided environment details to inform actions.
+-   How to handle images and integrate them into tasks.
+-   Important reminders about how the user's terminal or code formatter may have changed the file after a tool was used, so make sure to use the latest version of the file when making additional changes.
+## Overall Understanding:
+
+-   This system prompt establishes Klaus as a highly capable and structured AI assistant designed for complex development tasks. The prompt's detail and specificity ensure that Klaus follows a logical, tool-driven approach while adhering to best practices and user preferences.
+
+-   What else can I help you with?

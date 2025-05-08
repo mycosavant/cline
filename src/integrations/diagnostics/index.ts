@@ -70,12 +70,11 @@ export function getNewDiagnostics(
 // // - New error in file3 (1:1)
 
 // will return empty string if no problems with the given severity are found
-export async function diagnosticsToProblemsString(
+export function diagnosticsToProblemsString(
 	diagnostics: [vscode.Uri, vscode.Diagnostic[]][],
 	severities: vscode.DiagnosticSeverity[],
 	cwd: string,
-): Promise<string> {
-	const documents = new Map<vscode.Uri, vscode.TextDocument>()
+): string {
 	let result = ""
 	for (const [uri, fileDiagnostics] of diagnostics) {
 		const problems = fileDiagnostics.filter((d) => severities.includes(d.severity))
@@ -101,10 +100,7 @@ export async function diagnosticsToProblemsString(
 				}
 				const line = diagnostic.range.start.line + 1 // VSCode lines are 0-indexed
 				const source = diagnostic.source ? `${diagnostic.source} ` : ""
-				const document = documents.get(uri) || (await vscode.workspace.openTextDocument(uri))
-				documents.set(uri, document)
-				const lineContent = document.lineAt(diagnostic.range.start.line).text
-				result += `\n- [${source}${label}] ${line} | ${lineContent} : ${diagnostic.message}`
+				result += `\n- [${source}${label}] Line ${line}: ${diagnostic.message}`
 			}
 		}
 	}

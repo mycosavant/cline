@@ -1,37 +1,18 @@
-import { z } from "zod"
-
 import { ApiConfiguration } from "./api"
-import { Mode, PromptComponent, ModeConfig } from "./modes"
-
-export type ClineAskResponse = "yesButtonClicked" | "noButtonClicked" | "messageResponse"
-
-export type PromptMode = Mode | "enhance"
-
-export type AudioType = "notification" | "celebration" | "progress_loop"
+import { AutoApprovalSettings } from "./AutoApprovalSettings"
+import { BrowserSettings } from "./BrowserSettings"
+import { ChatSettings } from "./ChatSettings"
+import { UserInfo } from "./UserInfo"
+import { ChatContent } from "./ChatContent"
+import { TelemetrySetting } from "./TelemetrySetting"
 
 export interface WebviewMessage {
 	type:
+		| "addRemoteServer"
 		| "apiConfiguration"
-		| "deleteMultipleTasksWithIds"
-		| "currentApiConfigName"
-		| "saveApiConfiguration"
-		| "upsertApiConfiguration"
-		| "deleteApiConfiguration"
-		| "loadApiConfiguration"
-		| "loadApiConfigurationById"
-		| "renameApiConfiguration"
-		| "getListApiConfiguration"
-		| "customInstructions"
-		| "allowedCommands"
-		| "alwaysAllowReadOnly"
-		| "alwaysAllowReadOnlyOutsideWorkspace"
-		| "alwaysAllowWrite"
-		| "alwaysAllowWriteOutsideWorkspace"
-		| "alwaysAllowExecute"
 		| "webviewDidLaunch"
 		| "newTask"
 		| "askResponse"
-		| "terminalOperation"
 		| "clearTask"
 		| "didShowAnnouncement"
 		| "selectImages"
@@ -39,144 +20,87 @@ export interface WebviewMessage {
 		| "showTaskWithId"
 		| "deleteTaskWithId"
 		| "exportTaskWithId"
-		| "importSettings"
-		| "exportSettings"
 		| "resetState"
-		| "flushRouterModels"
-		| "requestRouterModels"
-		| "requestOpenAiModels"
 		| "requestOllamaModels"
 		| "requestLmStudioModels"
-		| "requestVsCodeLmModels"
 		| "openImage"
+		| "openInBrowser"
 		| "openFile"
 		| "openMention"
 		| "cancelTask"
-		| "updateVSCodeSetting"
-		| "getVSCodeSetting"
-		| "vsCodeSetting"
-		| "alwaysAllowBrowser"
-		| "alwaysAllowMcp"
-		| "alwaysAllowModeSwitch"
-		| "alwaysAllowSubtasks"
-		| "playSound"
-		| "playTts"
-		| "stopTts"
-		| "soundEnabled"
-		| "ttsEnabled"
-		| "ttsSpeed"
-		| "soundVolume"
-		| "diffEnabled"
-		| "enableCheckpoints"
-		| "browserViewportSize"
-		| "screenshotQuality"
-		| "remoteBrowserHost"
+		| "refreshOpenRouterModels"
+		| "refreshOpenAiModels"
 		| "openMcpSettings"
-		| "openProjectMcpSettings"
 		| "restartMcpServer"
-		| "toggleToolAlwaysAllow"
-		| "toggleMcpServer"
-		| "updateMcpTimeout"
-		| "fuzzyMatchThreshold"
-		| "writeDelayMs"
-		| "enhancePrompt"
-		| "enhancedPrompt"
-		| "draggedImages"
-		| "deleteMessage"
-		| "terminalOutputLineLimit"
-		| "terminalShellIntegrationTimeout"
-		| "terminalShellIntegrationDisabled"
-		| "terminalCommandDelay"
-		| "terminalPowershellCounter"
-		| "terminalZshClearEolMark"
-		| "terminalZshOhMy"
-		| "terminalZshP10k"
-		| "terminalZdotdir"
-		| "terminalCompressProgressBar"
-		| "mcpEnabled"
-		| "enableMcpServerCreation"
-		| "searchCommits"
-		| "alwaysApproveResubmit"
-		| "requestDelaySeconds"
-		| "setApiConfigPassword"
-		| "mode"
-		| "updatePrompt"
-		| "updateSupportPrompt"
-		| "resetSupportPrompt"
-		| "getSystemPrompt"
-		| "copySystemPrompt"
-		| "systemPrompt"
-		| "enhancementApiConfigId"
-		| "updateExperimental"
-		| "autoApprovalEnabled"
-		| "updateCustomMode"
-		| "deleteCustomMode"
-		| "setopenAiCustomModelInfo"
-		| "openCustomModesSettings"
+		| "deleteMcpServer"
+		| "autoApprovalSettings"
+		| "browserSettings"
+		| "togglePlanActMode"
 		| "checkpointDiff"
 		| "checkpointRestore"
-		| "deleteMcpServer"
-		| "maxOpenTabsContext"
-		| "maxWorkspaceFiles"
-		| "humanRelayResponse"
-		| "humanRelayCancel"
-		| "browserToolEnabled"
+		| "taskCompletionViewChanges"
+		| "openExtensionSettings"
+		| "requestVsCodeLmModels"
+		| "toggleToolAutoApprove"
+		| "toggleMcpServer"
+		| "getLatestState"
+		| "accountLoginClicked"
+		| "accountLogoutClicked"
+		| "showAccountViewClicked"
+		| "authStateChanged"
+		| "authCallback"
+		| "fetchMcpMarketplace"
+		| "downloadMcp"
+		| "silentlyRefreshMcpMarketplace"
+		| "searchCommits"
+		| "showMcpView"
+		| "fetchLatestMcpServersFromHub"
 		| "telemetrySetting"
-		| "showRooIgnoredFiles"
-		| "testBrowserConnection"
-		| "browserConnectionResult"
-		| "remoteBrowserEnabled"
-		| "language"
-		| "maxReadFileLine"
-		| "searchFiles"
-		| "toggleApiConfigPin"
-		| "setHistoryPreviewCollapsed"
+		| "openSettings"
+		| "updateMcpTimeout"
+		| "fetchOpenGraphData"
+		| "checkIsImageUrl"
+		| "invoke"
+		| "updateSettings"
+		| "clearAllTaskHistory"
+		| "fetchUserCreditsData"
+		| "optionsResponse"
+		| "requestTotalTasksSize"
+		| "taskFeedback"
+	// | "relaunchChromeDebugMode"
 	text?: string
 	disabled?: boolean
-	askResponse?: ClineAskResponse
+	askResponse?: KlausAskResponse
 	apiConfiguration?: ApiConfiguration
 	images?: string[]
 	bool?: boolean
-	value?: number
-	commands?: string[]
-	audioType?: AudioType
-	serverName?: string
-	toolName?: string
-	alwaysAllow?: boolean
-	mode?: Mode
-	promptMode?: PromptMode
-	customPrompt?: PromptComponent
-	dataUrls?: string[]
-	values?: Record<string, any>
-	query?: string
-	setting?: string
-	slug?: string
-	modeConfig?: ModeConfig
+	number?: number
+	autoApprovalSettings?: AutoApprovalSettings
+	browserSettings?: BrowserSettings
+	chatSettings?: ChatSettings
+	chatContent?: ChatContent
+	mcpId?: string
 	timeout?: number
-	payload?: WebViewMessagePayload
-	source?: "global" | "project"
-	requestId?: string
-	ids?: string[]
-	hasSystemPromptOverride?: boolean
-	terminalOperation?: "continue" | "abort"
-	historyPreviewCollapsed?: boolean
+	// For toggleToolAutoApprove
+	serverName?: string
+	serverUrl?: string
+	toolNames?: string[]
+	autoApprove?: boolean
+
+	// For auth
+	user?: UserInfo | null
+	customToken?: string
+	// For openInBrowser
+	url?: string
+	planActSeparateModelsSetting?: boolean
+	telemetrySetting?: TelemetrySetting
+	customInstructionsSetting?: string
+	// For task feedback
+	feedbackType?: TaskFeedbackType
 }
 
-export const checkoutDiffPayloadSchema = z.object({
-	ts: z.number(),
-	previousCommitHash: z.string().optional(),
-	commitHash: z.string(),
-	mode: z.enum(["full", "checkpoint"]),
-})
+export type KlausAskResponse = "yesButtonClicked" | "noButtonClicked" | "messageResponse"
 
-export type CheckpointDiffPayload = z.infer<typeof checkoutDiffPayloadSchema>
+export type KlausCheckpointRestore = "task" | "workspace" | "taskAndWorkspace"
 
-export const checkoutRestorePayloadSchema = z.object({
-	ts: z.number(),
-	commitHash: z.string(),
-	mode: z.enum(["preview", "restore"]),
-})
-
-export type CheckpointRestorePayload = z.infer<typeof checkoutRestorePayloadSchema>
-
-export type WebViewMessagePayload = CheckpointDiffPayload | CheckpointRestorePayload
+export type TaskFeedbackType = "thumbs_up" | "thumbs_down"

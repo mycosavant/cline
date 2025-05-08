@@ -1,138 +1,150 @@
-import { useCallback, useState } from "react"
-import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react"
-import { useExtensionState } from "@src/context/ExtensionStateContext"
-import { validateApiConfiguration } from "@src/utils/validate"
-import { vscode } from "@src/utils/vscode"
-import ApiOptions from "../settings/ApiOptions"
-import { Tab, TabContent } from "../common/Tab"
-import { Trans } from "react-i18next"
-import { useAppTranslation } from "@src/i18n/TranslationContext"
-import { getRequestyAuthUrl, getOpenRouterAuthUrl } from "@src/oauth/urls"
-import RooHero from "./RooHero"
-import knuthShuffle from "knuth-shuffle-seeded"
+import { VSCodeButton, VSCodeLink } from "@vscode/webview-ui-toolkit/react";
+import { useEffect, useState, memo } from "react";
+import styled from "styled-components";
+import { useExtensionState } from "../../context/ExtensionStateContext";
+import { validateApiConfiguration } from "../../utils/validate";
+import { vscode } from "../../utils/vscode";
+import { glassEffect } from "../../styles/glassmorphism";
+import ApiOptions from "../settings/ApiOptions";
+import KlausLogoCyan from "../../assets/KlausLogoCyan";
 
-const WelcomeView = () => {
-	const { apiConfiguration, currentApiConfigName, setApiConfiguration, uriScheme, machineId } = useExtensionState()
-	const { t } = useAppTranslation()
-	const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined)
+const WelcomeContainer = styled.div`
+  position: fixed;
+  inset: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+`;
 
-	const handleSubmit = useCallback(() => {
-		const error = apiConfiguration ? validateApiConfiguration(apiConfiguration) : undefined
+const WelcomeContent = styled.div`
+  height: 100%;
+  padding: 0 20px;
+  overflow: auto;
+  
+  h2 {
+    margin-top: 15px;
+    margin-bottom: 10px;
+    font-size: 24px;
+    font-weight: 500;
+  }
+  
+  p {
+    line-height: 1.5;
+    margin-bottom: 15px;
+  }
+`;
 
-		if (error) {
-			setErrorMessage(error)
-			return
-		}
+const LogoContainer = styled.div`
+  display: flex;
+  justify-content: center;
+  margin: 20px 0;
+`;
 
-		setErrorMessage(undefined)
-		vscode.postMessage({ type: "upsertApiConfiguration", text: currentApiConfigName, apiConfiguration })
-	}, [apiConfiguration, currentApiConfigName])
+const Card = styled.div`
+  ${glassEffect()}
+  margin: 15px 0;
+  padding: 20px;
+  background: color-mix(in srgb, var(--vscode-editor-background) 80%, transparent);
+  
+  // Add subtle highlight on top edge
+  &::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, 
+      transparent, 
+      color-mix(in srgb, var(--vscode-focusBorder) 15%, transparent),
+      transparent);
+  }
+`;
 
-	// Using a lazy initializer so it reads once at mount
-	const [imagesBaseUri] = useState(() => {
-		const w = window as any
-		return w.IMAGES_BASE_URI || ""
-	})
+const WelcomeButton = styled(VSCodeButton)`
+  width: 100%;
+  margin-top: 8px;
+  font-weight: 500 !important;
+  padding: 10px !important;
+  height: auto !important;
+  
+  &.primary {
+    ${glassEffect()}
+    background: color-mix(in srgb, var(--vscode-button-background) 80%, transparent) !important;
+  }
+  
+  &.secondary {
+    ${glassEffect()}
+    background: color-mix(in srgb, var(--vscode-button-secondaryBackground) 80%, transparent) !important;
+  }
+`;
 
-	return (
-		<Tab>
-			<TabContent className="flex flex-col gap-5">
-				<RooHero />
-				<h2 className="mx-auto">{t("chat:greeting")}</h2>
+const WelcomeView = memo(() => {
+  const { apiConfiguration } = useExtensionState();
+  const [apiErrorMessage, setApiErrorMessage] = useState<string | undefined>(undefined);
+  const [showApiOptions, setShowApiOptions] = useState(false);
 
-				<div className="outline rounded p-4">
-					<Trans i18nKey="welcome:introduction" />
-				</div>
+  const disableLetsGoButton = apiErrorMessage != null;
 
-				<div className="mb-4">
-					<h4 className="mt-3 mb-2 text-center">{t("welcome:startRouter")}</h4>
+  const handleLogin = () => {
+    vscode.postMessage({ type: "accountLoginClicked" });
+  };
 
-					<div className="flex gap-4">
-						{/* Define the providers */}
-						{(() => {
-							// Provider card configuration
-							const providers = [
-								{
-									slug: "requesty",
-									name: "Requesty",
-									description: t("welcome:routers.requesty.description"),
-									incentive: t("welcome:routers.requesty.incentive"),
-									authUrl: getRequestyAuthUrl(uriScheme),
-								},
-								{
-									slug: "openrouter",
-									name: "OpenRouter",
-									description: t("welcome:routers.openrouter.description"),
-									authUrl: getOpenRouterAuthUrl(uriScheme),
-								},
-							]
+  const handleSubmit = () => {
+    vscode.postMessage({ type: "apiConfiguration", apiConfiguration });
+  };
 
-							// Shuffle providers based on machine ID (will be consistent for the same machine)
-							const orderedProviders = [...providers]
-							knuthShuffle(orderedProviders, (machineId as any) || Date.now())
+  useEffect(() => {
+    setApiErrorMessage(validateApiConfiguration(apiConfiguration));
+  }, [apiConfiguration]);
 
-							// Render the provider cards
-							return orderedProviders.map((provider, index) => (
-								<a
-									key={index}
-									href={provider.authUrl}
-									className="flex-1 border border-vscode-panel-border rounded p-4 flex flex-col items-center cursor-pointer transition-all  no-underline text-inherit"
-									target="_blank"
-									rel="noopener noreferrer">
-									<div className="font-bold">{provider.name}</div>
-									<div className="w-16 h-16 flex items-center justify-center rounded m-2 overflow-hidden relative">
-										<img
-											src={`${imagesBaseUri}/${provider.slug}.png`}
-											alt={provider.name}
-											className="w-full h-full object-contain p-2"
-										/>
-									</div>
-									<div className="text-center">
-										<div className="text-xs text-vscode-descriptionForeground">
-											{provider.description}
-										</div>
-										{provider.incentive && (
-											<div className="text-xs font-bold">{provider.incentive}</div>
-										)}
-									</div>
-								</a>
-							))
-						})()}
-					</div>
+  return (
+    <WelcomeContainer>
+      <WelcomeContent>
+        <h2>Hi, I'm Klaus</h2>
+        <LogoContainer>
+          <KlausLogoCyan className="size-16" />
+        </LogoContainer>
+        <p>
+          I can do all kinds of tasks thanks to breakthroughs in{" "}
+          <VSCodeLink href="https://www.anthropic.com/claude/sonnet" className="inline">
+            Claude 3.7 Sonnet's
+          </VSCodeLink>{" "}
+          agentic coding capabilities and access to tools that let me create & edit files, explore complex projects, use
+          a browser, and execute terminal commands <i>(with your permission, of course)</i>. I can even use MCP to
+          create new tools and extend my own capabilities.
+        </p>
 
-					<div className="text-center my-4 text-xl uppercase font-bold">{t("welcome:or")}</div>
-					<h4 className="mt-3 mb-2 text-center">{t("welcome:startCustom")}</h4>
-					<ApiOptions
-						fromWelcomeView
-						apiConfiguration={apiConfiguration || {}}
-						uriScheme={uriScheme}
-						setApiConfigurationField={(field, value) => setApiConfiguration({ [field]: value })}
-						errorMessage={errorMessage}
-						setErrorMessage={setErrorMessage}
-					/>
-				</div>
-			</TabContent>
-			<div className="sticky bottom-0 bg-vscode-sideBar-background p-5">
-				<div className="flex flex-col gap-1">
-					<div className="flex justify-end">
-						<VSCodeLink
-							href="#"
-							onClick={(e) => {
-								e.preventDefault()
-								vscode.postMessage({ type: "importSettings" })
-							}}
-							className="text-sm">
-							{t("welcome:importSettings")}
-						</VSCodeLink>
-					</div>
-					<VSCodeButton onClick={handleSubmit} appearance="primary">
-						{t("welcome:start")}
-					</VSCodeButton>
-					{errorMessage && <div className="text-vscode-errorForeground">{errorMessage}</div>}
-				</div>
-			</div>
-		</Tab>
-	)
-}
+        <Card>
+          <p style={{ color: "var(--vscode-descriptionForeground)" }}>
+            Sign up for an account to get started for free, or use an API key that provides access to models like Claude
+            3.7 Sonnet.
+          </p>
 
-export default WelcomeView
+          <WelcomeButton className="primary" onClick={handleLogin}>
+            Get Started for Free
+          </WelcomeButton>
+
+          {!showApiOptions && (
+            <WelcomeButton className="secondary" onClick={() => setShowApiOptions(!showApiOptions)}>
+              Use your own API key
+            </WelcomeButton>
+          )}
+        </Card>
+
+        <div>
+          {showApiOptions && (
+            <div>
+              <ApiOptions showModelOptions={false} />
+              <WelcomeButton onClick={handleSubmit} disabled={disableLetsGoButton}>
+                Let's go!
+              </WelcomeButton>
+            </div>
+          )}
+        </div>
+      </WelcomeContent>
+    </WelcomeContainer>
+  );
+});
+
+export default WelcomeView;

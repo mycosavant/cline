@@ -1,20 +1,18 @@
-import { ClineMessage } from "./ExtensionMessage"
-
-export const COMMAND_OUTPUT_STRING = "Output:"
+import { KlausMessage } from "./ExtensionMessage"
 
 /**
- * Combines sequences of command and command_output messages in an array of ClineMessages.
+ * Combines sequences of command and command_output messages in an array of KlausMessages.
  *
- * This function processes an array of ClineMessages objects, looking for sequences
+ * This function processes an array of KlausMessages objects, looking for sequences
  * where a 'command' message is followed by one or more 'command_output' messages.
  * When such a sequence is found, it combines them into a single message, merging
  * their text contents.
  *
- * @param messages - An array of ClineMessage objects to process.
- * @returns A new array of ClineMessage objects with command sequences combined.
+ * @param messages - An array of KlausMessage objects to process.
+ * @returns A new array of KlausMessage objects with command sequences combined.
  *
  * @example
- * const messages: ClineMessage[] = [
+ * const messages: KlausMessage[] = [
  *   { type: 'ask', ask: 'command', text: 'ls', ts: 1625097600000 },
  *   { type: 'ask', ask: 'command_output', text: 'file1.txt', ts: 1625097601000 },
  *   { type: 'ask', ask: 'command_output', text: 'file2.txt', ts: 1625097602000 }
@@ -22,58 +20,55 @@ export const COMMAND_OUTPUT_STRING = "Output:"
  * const result = simpleCombineCommandSequences(messages);
  * // Result: [{ type: 'ask', ask: 'command', text: 'ls\nfile1.txt\nfile2.txt', ts: 1625097600000 }]
  */
-export function combineCommandSequences(messages: ClineMessage[]): ClineMessage[] {
-	const combinedCommands: ClineMessage[] = []
+export function combineCommandSequences(messages: KlausMessage[]): KlausMessage[] {
+	const combinedCommands: KlausMessage[] = []
 
-	// First pass: combine commands with their outputs.
+	// First pass: combine commands with their outputs
 	for (let i = 0; i < messages.length; i++) {
-		if (messages[i].type === "ask" && messages[i].ask === "command") {
+		if (messages[i].ask === "command" || messages[i].say === "command") {
 			let combinedText = messages[i].text || ""
+			let didAddOutput = false
 			let j = i + 1
-			let previous: { type: "ask" | "say"; text: string } | undefined
 
 			while (j < messages.length) {
-				const { type, ask, say, text = "" } = messages[j]
-
-				if (type === "ask" && ask === "command") {
-					break // Stop if we encounter the next command.
+				if (messages[j].ask === "command" || messages[j].say === "command") {
+					// Stop if we encounter the next command
+					break
 				}
-
-				if (ask === "command_output" || say === "command_output") {
-					if (!previous) {
+				if (messages[j].ask === "command_output" || messages[j].say === "command_output") {
+					if (!didAddOutput) {
+						// Add a newline before the first output
 						combinedText += `\n${COMMAND_OUTPUT_STRING}`
+						didAddOutput = true
 					}
-
-					const isDuplicate = previous && previous.type !== type && previous.text === text
-
-					if (text.length > 0 && !isDuplicate) {
-						combinedText += text
+					// handle cases where we receive empty command_output (ie when extension is relinquishing control over exit command button)
+					const output = messages[j].text || ""
+					if (output.length > 0) {
+						combinedText += "\n" + output
 					}
-
-					previous = { type, text }
 				}
-
 				j++
 			}
 
-			combinedCommands.push({ ...messages[i], text: combinedText })
+			combinedCommands.push({
+				...messages[i],
+				text: combinedText,
+			})
 
-			// Move to the index just before the next command or end of array.
-			i = j - 1
+			i = j - 1 // Move to the index just before the next command or end of array
 		}
 	}
 
-	// console.log(`[combineCommandSequences] combinedCommands ->`, messages, combinedCommands)
-
-	// Second pass: remove command_outputs and replace original commands with
-	// combined ones.
+	// Second pass: remove command_outputs and replace original commands with combined ones
 	return messages
 		.filter((msg) => !(msg.ask === "command_output" || msg.say === "command_output"))
 		.map((msg) => {
-			if (msg.type === "ask" && msg.ask === "command") {
-				return combinedCommands.find((cmd) => cmd.ts === msg.ts) || msg
+			if (msg.ask === "command" || msg.say === "command") {
+				const combinedCommand = combinedCommands.find((cmd) => cmd.ts === msg.ts)
+				return combinedCommand || msg
 			}
-
 			return msg
 		})
 }
+export const COMMAND_OUTPUT_STRING = "Output:"
+export const COMMAND_REQ_APP_STRING = "REQ_APP"
