@@ -776,6 +776,7 @@ export const isGlobalStateKey = (key: string): key is Keys<GlobalState> =>
 /**
  * ClineAsk
  */
+// TODO(ClineAsks|ClineSays): ClineAsk ans ClineSay should be enums, but we need to use string literals for the type system to work correctly.
 
 export const clineAsks = [
 	"followup",
@@ -867,6 +868,7 @@ export const tokenUsageSchema = z.object({
 	totalCacheReads: z.number().optional(),
 	totalCost: z.number(),
 	contextTokens: z.number(),
+	toolStats: z.record(z.string(), z.number()).optional(), // Add tool statistics tracking
 })
 
 export type TokenUsage = z.infer<typeof tokenUsageSchema>
@@ -893,6 +895,7 @@ export const toolNames = [
 	"switch_mode",
 	"new_task",
 	"fetch_instructions",
+	"create_subtask", // Add create_subtask tool
 ] as const
 
 export const toolNamesSchema = z.enum(toolNames)
@@ -914,6 +917,24 @@ export const toolUsageSchema = z.record(
 export type ToolUsage = z.infer<typeof toolUsageSchema>
 
 /**
+ * SubtaskState
+ */
+
+export const subtaskStateSchema = z.object({
+	id: z.string(),
+	parentId: z.string().optional(),
+	task: z.string(),
+	status: z.enum(["pending", "running", "completed", "failed"]),
+	result: z.string().optional(),
+	error: z.string().optional(),
+	tokenUsage: tokenUsageSchema.optional(),
+	createdAt: z.number(),
+	completedAt: z.number().optional(),
+})
+
+export type SubtaskState = z.infer<typeof subtaskStateSchema>
+
+/**
  * RooCodeEvent
  */
 
@@ -930,6 +951,9 @@ export enum RooCodeEventName {
 	TaskCompleted = "taskCompleted",
 	TaskTokenUsageUpdated = "taskTokenUsageUpdated",
 	TaskToolFailed = "taskToolFailed",
+	SubtaskCreated = "subtaskCreated", // Add subtask events
+	SubtaskCompleted = "subtaskCompleted",
+	SubtaskFailed = "subtaskFailed",
 }
 
 export const rooCodeEventsSchema = z.object({
@@ -951,6 +975,9 @@ export const rooCodeEventsSchema = z.object({
 	[RooCodeEventName.TaskCompleted]: z.tuple([z.string(), tokenUsageSchema, toolUsageSchema]),
 	[RooCodeEventName.TaskTokenUsageUpdated]: z.tuple([z.string(), tokenUsageSchema]),
 	[RooCodeEventName.TaskToolFailed]: z.tuple([z.string(), toolNamesSchema, z.string()]),
+	[RooCodeEventName.SubtaskCreated]: z.tuple([z.string(), subtaskStateSchema]),
+	[RooCodeEventName.SubtaskCompleted]: z.tuple([z.string(), subtaskStateSchema]),
+	[RooCodeEventName.SubtaskFailed]: z.tuple([z.string(), subtaskStateSchema, z.string()]),
 })
 
 export type RooCodeEvents = z.infer<typeof rooCodeEventsSchema>
@@ -969,6 +996,7 @@ export const typeDefinitions: TypeDefinition[] = [
 	{ schema: globalSettingsSchema, identifier: "GlobalSettings" },
 	{ schema: clineMessageSchema, identifier: "ClineMessage" },
 	{ schema: tokenUsageSchema, identifier: "TokenUsage" },
+	{ schema: subtaskStateSchema, identifier: "SubtaskState" }, // Add SubtaskState to exports
 	{ schema: rooCodeEventsSchema, identifier: "RooCodeEvents" },
 ]
 

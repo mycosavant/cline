@@ -31,6 +31,7 @@ export const KlausAccountInfoCard = () => {
 					View Billing & Usage
 				</VSCodeButton>
 			) : (
+				//TODO UI/OnBoarding: Add Klaus logo and make it look like a card
 				// <div className="p-2 rounded-[2px] bg-[var(--vscode-dropdown-background)]">
 				// 	<div className="flex items-center gap-3">
 				// 		{user.photoURL ? (

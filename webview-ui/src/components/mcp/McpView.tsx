@@ -22,6 +22,39 @@ import AddRemoteServerForm from "./tabs/AddRemoteServerForm"
 import AddLocalServerForm from "./tabs/AddLocalServerForm"
 import { glassEffect, hoverEffect, GlassButton, GlassPanel } from "../../styles/glassmorphism"
 
+// Define StyledTabButton here so it's in scope for the TabButton component
+export const StyledTabButton = styled.button<{ isActive: boolean }>`
+    background: none;
+    border: none;
+    border-bottom: 2px solid ${(props) => (props.isActive ? "var(--vscode-foreground)" : "transparent")};
+    color: ${(props) => (props.isActive ? "var(--vscode-foreground)" : "var(--vscode-descriptionForeground)")};
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    margin-bottom: -1px;
+    font-family: inherit;
+    ${hoverEffect}
+
+    &:hover {
+        color: var(--vscode-foreground);
+    }
+`
+
+// Move TabButton component here to make it available within the file
+export const TabButton = ({
+    children,
+    isActive,
+    onClick,
+}: {
+    children: React.ReactNode
+    isActive: boolean
+    onClick: () => void
+}) => (
+    <StyledTabButton isActive={isActive} onClick={onClick}>
+        {children}
+    </StyledTabButton>
+)
+
 type McpViewProps = {
     onDone: () => void
 }
@@ -101,7 +134,7 @@ const SettingsSection = styled.div`
     margin-top: 10px;
 `
 
-const ServerRow = styled(GlassPanel)`
+const ServerRow = styled(GlassPanel)<{$disabled?: boolean}>`
     margin-bottom: 10px;
     padding: 0;
     opacity: ${(props) => props.$disabled ? 0.6 : 1};
@@ -113,7 +146,7 @@ const ServerRow = styled(GlassPanel)`
     }
 `
 
-const ServerHeader = styled.div<{$error?: boolean}>`
+const ServerHeader = styled.div<{$error?: boolean, $isExpanded?: boolean}>`
     display: flex;
     align-items: center;
     padding: 8px;
@@ -175,6 +208,20 @@ const ErrorMessage = styled.div`
     padding: 0 10px;
     overflow-wrap: break-word;
     word-break: break-word;
+`
+
+const TimeoutContainer = styled.div`
+    margin: 10px 7px;
+`
+
+const TimeoutLabel = styled.label`
+    display: block;
+    margin-bottom: 4px;
+    font-size: 13px;
+`
+
+const StyledDropdown = styled(VSCodeDropdown)`
+    width: 100%;
 `
 
 const ToggleSwitch = styled.div<{$active: boolean}>`
@@ -580,16 +627,17 @@ const ServerComponent = ({ server }: { server: McpServer }) => {
                             </VSCodePanelView>
                         </VSCodePanels>
 
-                        <div style={{ margin: "10px 7px" }}>
-                            <label style={{ display: "block", marginBottom: "4px", fontSize: "13px" }}>Request Timeout</label>
-                            <VSCodeDropdown style={{ width: "100%" }} value={timeoutValue} onChange={handleTimeoutChange}>
+                        <TimeoutContainer>
+                            <TimeoutLabel>Request Timeout</TimeoutLabel>
+                            <StyledDropdown value={timeoutValue} onChange={handleTimeoutChange}>
                                 {timeoutOptions.map((option) => (
                                     <VSCodeOption key={option.value} value={option.value}>
                                         {option.label}
                                     </VSCodeOption>
                                 ))}
-                            </VSCodeDropdown>
-                        </div>
+                            </StyledDropdown>
+                        </TimeoutContainer>
+                        
                         <GlassButton
                             appearance="secondary"
                             onClick={handleRestart}
@@ -613,37 +661,5 @@ const ServerComponent = ({ server }: { server: McpServer }) => {
         </>
     );
 };
-
-// Keep existing TabButton since it's already using styled-components
-export const StyledTabButton = styled.button<{ isActive: boolean }>`
-    background: none;
-    border: none;
-    border-bottom: 2px solid ${(props) => (props.isActive ? "var(--vscode-foreground)" : "transparent")};
-    color: ${(props) => (props.isActive ? "var(--vscode-foreground)" : "var(--vscode-descriptionForeground)")};
-    padding: 8px 16px;
-    cursor: pointer;
-    font-size: 13px;
-    margin-bottom: -1px;
-    font-family: inherit;
-    ${hoverEffect}
-
-    &:hover {
-        color: var(--vscode-foreground);
-    }
-`
-
-export const TabButton = ({
-    children,
-    isActive,
-    onClick,
-}: {
-    children: React.ReactNode
-    isActive: boolean
-    onClick: () => void
-}) => (
-    <StyledTabButton isActive={isActive} onClick={onClick}>
-        {children}
-    </StyledTabButton>
-)
 
 export default McpView
