@@ -1,125 +1,181 @@
-import { AssistantMessageContent, TextContent, ToolUse, ToolParamName, toolParamNames, toolUseNames, ToolUseName } from "."
+import { AssistantMessageContent, TextContent, ToolUse, ToolParamName, toolParamNames, toolUseNames, ToolUseName, ToolExecutionMode } from "."
+import { v4 as uuidv4 } from 'uuid'
 
-export function parseAssistantMessage(assistantMessage: string) {
-	const contentBlocks: AssistantMessageContent[] = []
-	let currentTextContent: TextContent | undefined = undefined
-	let currentTextContentStartIndex = 0
-	let currentToolUse: ToolUse | undefined = undefined
-	let currentToolUseStartIndex = 0
-	let currentParamName: ToolParamName | undefined = undefined
-	let currentParamValueStartIndex = 0
-	let accumulator = ""
+/**
+ * Parses tool calls from a block of text
+ * @param blockContent The content to parse for tool calls
+ * @param execMode The execution mode to apply to parsed tool calls
+ * @returns Array of parsed tool calls
+ */
+function parseToolCallsFromBlock(blockContent: string, execMode: ToolExecutionMode = "single"): ToolUse[] {
+  const toolCalls: ToolUse[] = []
+  let pos = 0
+  
+  while (pos < blockContent.length) {
+    // Find opening tag for any tool
+    const openTagStart = blockContent.indexOf("<", pos)
+    if (openTagStart === -1) break
+    
+    const openTagEnd = blockContent.indexOf(">", openTagStart)
+    if (openTagEnd === -1) break
+    
+    const tagName = blockContent.slice(openTagStart + 1, openTagEnd)
+    
+    // Check if this is a valid tool name
+    if (!toolUseNames.includes(tagName as ToolUseName)) {
+      pos = openTagEnd + 1
+      continue
+    }
+    
+    const toolName = tagName as ToolUseName
+    
+    // Find closing tag
+    const closeTag = `</${toolName}>`
+    const closeTagStart = blockContent.indexOf(closeTag, openTagEnd)
+    if (closeTagStart === -1) {
+      pos = openTagEnd + 1
+      continue
+    }
+    
+    // Extract the tool content
+    const toolContent = blockContent.slice(openTagEnd + 1, closeTagStart)
+    
+    // Parse regular parameters
+    const params: Partial<Record<ToolParamName, string>> = {}
+    let toolId: string | undefined = undefined
+    let dependsOn: string | undefined = undefined
+    
+    // First extract toolId and dependsOn if present
+    const toolIdMatch = /<toolId>(.*?)<\/toolId>/s.exec(toolContent)
+    if (toolIdMatch && toolIdMatch[1]) {
+      toolId = toolIdMatch[1].trim()
+    }
+    
+    const dependsOnMatch = /<dependsOn>(.*?)<\/dependsOn>/s.exec(toolContent)
+    if (dependsOnMatch && dependsOnMatch[1]) {
+      dependsOn = dependsOnMatch[1].trim()
+    }
+    
+    // Then extract regular parameters
+    for (const paramName of toolParamNames) {
+      const paramOpenTag = `<${paramName}>`
+      const paramCloseTag = `</${paramName}>`
+      
+      const paramStart = toolContent.indexOf(paramOpenTag)
+      if (paramStart === -1) continue
+      
+      const paramContentStart = paramStart + paramOpenTag.length
+      const paramEnd = toolContent.indexOf(paramCloseTag, paramContentStart)
+      if (paramEnd === -1) continue
+      
+      params[paramName] = toolContent.slice(paramContentStart, paramEnd).trim()
+    }
+    
+    // Create the tool use object with an ID to track dependencies
+    toolCalls.push({
+      type: "tool_use",
+      name: toolName,
+      params,
+      partial: false,
+      mode: execMode,
+      toolId: toolId || uuidv4(),
+      dependsOn
+    })
+    
+    pos = closeTagStart + closeTag.length
+  }
+  
+  // Add dependency references for sequential execution if not explicitly specified
+  if (execMode === "sequential" && toolCalls.length > 1) {
+    for (let i = 1; i < toolCalls.length; i++) {
+      if (!toolCalls[i].dependsOn && toolCalls[i-1].toolId) {
+        // Each tool depends on the previous one in sequential mode (if not already specified)
+        toolCalls[i].dependsOn = toolCalls[i-1].toolId
+      }
+    }
+  }
+  
+  return toolCalls
+}
 
-	for (let i = 0; i < assistantMessage.length; i++) {
-		const char = assistantMessage[i]
-		accumulator += char
+/**
+ * Process an execution block (parallel or sequential) and return the parsed content blocks
+ * @param assistantMessage Full message from assistant
+ * @param blockType Type of block ('parallel' or 'sequential')
+ * @param tagName Optional custom tag name for the block (defaults to blockType)
+ * @returns Array of content blocks from the processed execution block
+ */
+function processExecutionBlock(assistantMessage: string, blockType: 'parallel' | 'sequential', tagName?: string): AssistantMessageContent[] {
+  const contentBlocks: AssistantMessageContent[] = []
+  const openTag = tagName ? `<${tagName}>` : `<${blockType}>`
+  const closeTag = tagName ? `</${tagName}>` : `</${blockType}>`
+  
+  // Find the block
+  const openTagIndex = assistantMessage.indexOf(openTag)
+  const closeTagIndex = assistantMessage.indexOf(closeTag)
+  
+  if (openTagIndex === -1 || closeTagIndex === -1 || closeTagIndex <= openTagIndex) {
+    // If we can't find proper tags, return an empty array
+    return []
+  }
+  
+  // Extract block content
+  const blockContent = assistantMessage.slice(openTagIndex + openTag.length, closeTagIndex)
+  
+  // Parse tool calls
+  const mode: ToolExecutionMode = blockType === 'parallel' ? 'parallel' : 'sequential'
+  const toolCalls = parseToolCallsFromBlock(blockContent, mode)
+  
+  // Text before the block
+  if (openTagIndex > 0) {
+    contentBlocks.push({
+      type: "text",
+      content: assistantMessage.slice(0, openTagIndex).trim(),
+      partial: false
+    })
+  }
+  
+  // Add the tool calls
+  contentBlocks.push(...toolCalls)
+  
+  // Text after the block
+  const endIndex = closeTagIndex + closeTag.length
+  if (endIndex < assistantMessage.length) {
+    contentBlocks.push({
+      type: "text",
+      content: assistantMessage.slice(endIndex).trim(),
+      partial: false
+    })
+  }
+  
+  return contentBlocks
+}
 
-		// there should not be a param without a tool use
-		if (currentToolUse && currentParamName) {
-			const currentParamValue = accumulator.slice(currentParamValueStartIndex)
-			const paramClosingTag = `</${currentParamName}>`
-			if (currentParamValue.endsWith(paramClosingTag)) {
-				// end of param value
-				currentToolUse.params[currentParamName] = currentParamValue.slice(0, -paramClosingTag.length).trim()
-				currentParamName = undefined
-				continue
-			} else {
-				// partial param value is accumulating
-				continue
-			}
-		}
-
-		// no currentParamName
-
-		if (currentToolUse) {
-			const currentToolValue = accumulator.slice(currentToolUseStartIndex)
-			const toolUseClosingTag = `</${currentToolUse.name}>`
-			if (currentToolValue.endsWith(toolUseClosingTag)) {
-				// end of a tool use
-				currentToolUse.partial = false
-				contentBlocks.push(currentToolUse)
-				currentToolUse = undefined
-				continue
-			} else {
-				const possibleParamOpeningTags = toolParamNames.map((name) => `<${name}>`)
-				for (const paramOpeningTag of possibleParamOpeningTags) {
-					if (accumulator.endsWith(paramOpeningTag)) {
-						// start of a new parameter
-						currentParamName = paramOpeningTag.slice(1, -1) as ToolParamName
-						currentParamValueStartIndex = accumulator.length
-						break
-					}
-				}
-
-				// there's no current param, and not starting a new param
-
-				// special case for write_to_file where file contents could contain the closing tag, in which case the param would have closed and we end up with the rest of the file contents here. To work around this, we get the string between the starting content tag and the LAST content tag.
-				const contentParamName: ToolParamName = "content"
-				if (currentToolUse.name === "write_to_file" && accumulator.endsWith(`</${contentParamName}>`)) {
-					const toolContent = accumulator.slice(currentToolUseStartIndex)
-					const contentStartTag = `<${contentParamName}>`
-					const contentEndTag = `</${contentParamName}>`
-					const contentStartIndex = toolContent.indexOf(contentStartTag) + contentStartTag.length
-					const contentEndIndex = toolContent.lastIndexOf(contentEndTag)
-					if (contentStartIndex !== -1 && contentEndIndex !== -1 && contentEndIndex > contentStartIndex) {
-						currentToolUse.params[contentParamName] = toolContent.slice(contentStartIndex, contentEndIndex).trim()
-					}
-				}
-
-				// partial tool value is accumulating
-				continue
-			}
-		}
-
-		// no currentToolUse
-
-		let didStartToolUse = false
-		const possibleToolUseOpeningTags = toolUseNames.map((name) => `<${name}>`)
-		for (const toolUseOpeningTag of possibleToolUseOpeningTags) {
-			if (accumulator.endsWith(toolUseOpeningTag)) {
-				// start of a new tool use
-				currentToolUse = {
-					type: "tool_use",
-					name: toolUseOpeningTag.slice(1, -1) as ToolUseName,
-					params: {},
-					partial: true,
-				}
-				currentToolUseStartIndex = accumulator.length
-				// this also indicates the end of the current text content
-				if (currentTextContent) {
-					currentTextContent.partial = false
-					// remove the partially accumulated tool use tag from the end of text (<tool)
-					currentTextContent.content = currentTextContent.content
-						.slice(0, -toolUseOpeningTag.slice(0, -1).length)
-						.trim()
-					contentBlocks.push(currentTextContent)
-					currentTextContent = undefined
-				}
-
-				didStartToolUse = true
-				break
-			}
-		}
-
-		if (!didStartToolUse) {
-			// no tool use, so it must be text either at the beginning or between tools
-			if (currentTextContent === undefined) {
-				currentTextContentStartIndex = i
-			}
-			currentTextContent = {
-				type: "text",
-				content: accumulator.slice(currentTextContentStartIndex).trim(),
-				partial: true,
-			}
-		}
-	}
-
-	if (currentToolUse) {
-		// stream did not complete tool call, add it as partial
-		if (currentParamName) {
-			// tool call has a parameter that was not completed
-			currentToolUse.params[currentParamName] = accumulator.slice(currentParamValueStartIndex).trim()
-		}
+export function parseAssistantMessage(assistantMessage: string): AssistantMessageContent[] {
+  // First check for multi-tool execution blocks
+  const multiToolParallelMatch = assistantMessage.match(/<multi_tool_use mode="parallel">([\s\S]*?)<\/multi_tool_use>/)
+  const multiToolSequentialMatch = assistantMessage.match(/<multi_tool_use mode="sequential">([\s\S]*?)<\/multi_tool_use>/)
+  
+  // Also check for legacy format (direct mode tags)
+  const parallelMatch = assistantMessage.match(/<parallel>([\s\S]*?)<\/parallel>/)
+  const sequentialMatch = assistantMessage.match(/<sequential>([\s\S]*?)<\/sequential>/)
+  
+  if (multiToolParallelMatch) {
+    // Handle multi-tool parallel execution block
+    return processExecutionBlock(assistantMessage, 'parallel', 'multi_tool_use mode="parallel"')
+  } 
+  else if (multiToolSequentialMatch) {
+    // Handle multi-tool sequential execution block
+    return processExecutionBlock(assistantMessage, 'sequential', 'multi_tool_use mode="sequential"')
+  }
+  else if (parallelMatch) {
+    // Handle legacy parallel execution block
+    return processExecutionBlock(assistantMessage, 'parallel')
+  } 
+  else if (sequentialMatch) {
+    // Handle legacy sequential execution block
+    return processExecutionBlock(assistantMessage, 'sequential')
+  }
 		contentBlocks.push(currentToolUse)
 	}
 

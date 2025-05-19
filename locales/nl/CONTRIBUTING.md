@@ -1,168 +1,129 @@
+[English](../../CONTRIBUTING.md) • [Català](../ca/CONTRIBUTING.md) • [Deutsch](../de/CONTRIBUTING.md) • [Español](../es/CONTRIBUTING.md) • [Français](../fr/CONTRIBUTING.md) • [हिंदी](../hi/CONTRIBUTING.md) • [Italiano](../it/CONTRIBUTING.md) • <b>Nederlands</b> • [Русский](../ru/CONTRIBUTING.md)
+
+[日本語](../ja/CONTRIBUTING.md) • [한국어](../ko/CONTRIBUTING.md) • [Polski](../pl/CONTRIBUTING.md) • [Português (BR)](../pt-BR/CONTRIBUTING.md) • [Türkçe](../tr/CONTRIBUTING.md) • [Tiếng Việt](../vi/CONTRIBUTING.md) • [简体中文](../zh-CN/CONTRIBUTING.md) • [繁體中文](../zh-TW/CONTRIBUTING.md)
+
 # Bijdragen aan Roo Code
 
-We zijn blij dat je wilt bijdragen aan Roo Code. Of je nu een bug oplost, een nieuwe functie toevoegt of onze documentatie verbetert, elke bijdrage maakt Roo Code slimmer! Om onze community levendig en gastvrij te houden, moeten alle leden zich houden aan onze [Gedragscode](CODE_OF_CONDUCT.md).
+Roo Code is een door de community gedreven project en we waarderen elke bijdrage enorm. Om de samenwerking te stroomlijnen, werken we volgens een [Issue-First](#issue-first-aanpak) principe, wat betekent dat alle [Pull Requests (PR's)](#een-pull-request-indienen) eerst gekoppeld moeten worden aan een GitHub Issue. Lees deze gids zorgvuldig door.
 
-## Word lid van onze community
+## Inhoudsopgave
 
-We raden alle bijdragers sterk aan om lid te worden van onze [Discord-community](https://discord.gg/roocode)! Deelname aan onze Discord-server helpt je:
+- [Voordat je bijdraagt](#voordat-je-bijdraagt)
+- [Je bijdrage vinden & plannen](#je-bijdrage-vinden--plannen)
+- [Ontwikkelings- & indieningsproces](#ontwikkelings--indieningsproces)
+- [Juridisch](#juridisch)
 
-- Direct hulp en begeleiding te krijgen bij je bijdragen
-- In contact te komen met andere bijdragers en het kernteam
-- Op de hoogte te blijven van projectontwikkelingen en prioriteiten
-- Mee te doen aan discussies die de toekomst van Roo Code vormgeven
-- Samenwerkingsmogelijkheden te vinden met andere ontwikkelaars
+## Voordat je bijdraagt
 
-## Bugs of problemen melden
+### 1. Gedragscode
 
-Bugmeldingen helpen Roo Code voor iedereen beter te maken! Zoek voordat je een nieuw issue aanmaakt eerst naar [bestaande issues](https://github.com/RooVetGit/Roo-Code/issues) om duplicaten te voorkomen. Klaar om een bug te melden? Ga dan naar onze [issues-pagina](https://github.com/RooVetGit/Roo-Code/issues/new/choose) waar je een sjabloon vindt om je te helpen de relevante informatie in te vullen.
+Alle bijdragers moeten zich houden aan onze [Gedragscode](./CODE_OF_CONDUCT.md).
 
-<blockquote class='warning-note'>
-     🔐 <b>Belangrijk:</b> Als je een beveiligingsprobleem ontdekt, gebruik dan het <a href="https://github.com/RooVetGit/Roo-Code/security/advisories/new">Github-beveiligingsformulier om het privé te melden</a>.
-</blockquote>
+### 2. De project-roadmap
 
-## Waar kun je aan werken?
+Onze roadmap bepaalt de richting van het project. Stem je bijdragen af op deze kernpunten:
 
-Op zoek naar een goed eerste issue? Bekijk de issues in de sectie "Issue [Unassigned]" van ons [Roo Code Issues](https://github.com/orgs/RooVetGit/projects/1) Github Project. Deze zijn speciaal geselecteerd voor nieuwe bijdragers en gebieden waar we graag hulp willen!
+### Betrouwbaarheid eerst
 
-We verwelkomen ook bijdragen aan onze [documentatie](https://docs.roocode.com/)! Of het nu gaat om het verbeteren van bestaande handleidingen, het corrigeren van typefouten of het maken van nieuwe educatieve content - we bouwen graag samen aan een community-gedreven kennisbank. Je kunt op elke pagina op "Edit this page" klikken om snel naar het juiste bestand op Github te gaan, of direct naar https://github.com/RooVetGit/Roo-Code-Docs.
+- Zorgen dat diff-bewerking en opdrachtuitvoering consistent betrouwbaar zijn
+- Verminderen van wrijvingspunten die regelmatig gebruik ontmoedigen
+- Garanderen van soepele werking in alle talen en op alle platforms
+- Uitbreiden van robuuste ondersteuning voor een breed scala aan AI-providers en -modellen
 
-Wil je aan een grotere functie werken? Maak dan eerst een [feature request](https://github.com/RooVetGit/Roo-Code/discussions/categories/feature-requests?discussions_q=is%3Aopen+category%3A%22Feature+Requests%22+sort%3Atop) aan zodat we kunnen bespreken of het past bij de visie van Roo Code. Bekijk ook onze [Project Roadmap](#project-roadmap) hieronder om te zien of je idee aansluit bij onze strategische richting.
+### Verbeterde gebruikerservaring
 
-## Project Roadmap
+- Vereenvoudigen van de gebruikersinterface voor meer duidelijkheid en intuïtiviteit
+- Continu verbeteren van de workflow om te voldoen aan de hoge verwachtingen van ontwikkelaars
 
-Roo Code heeft een duidelijke ontwikkelroutekaart die onze prioriteiten en toekomstige richting bepaalt. Door onze roadmap te begrijpen kun je:
+### Voorop lopen in agent-prestaties
 
-- Je bijdragen afstemmen op projectdoelen
-- Gebieden identificeren waar jouw expertise het meest waardevol is
-- De context achter bepaalde ontwerpkeuzes begrijpen
-- Inspiratie opdoen voor nieuwe functies die onze visie ondersteunen
+- Opstellen van uitgebreide evaluatiebenchmarks (evals) om productiviteit in de echte wereld te meten
+- Het voor iedereen gemakkelijk maken om deze evaluaties uit te voeren en te interpreteren
+- Verbeteringen leveren die duidelijke stijgingen in evaluatiescores aantonen
 
-Onze huidige roadmap richt zich op zes belangrijke pijlers:
+Vermeld de afstemming met deze gebieden in je PR's.
 
-### Providerondersteuning
+### 3. Word lid van de Roo Code-community
 
-We willen zoveel mogelijk providers goed ondersteunen:
+- **Hoofdmethode:** Word lid van onze [Discord](https://discord.gg/roocode) en stuur een DM naar **Hannes Rudolph (`hrudolph`)**.
+- **Alternatief:** Ervaren bijdragers kunnen direct meedoen via [GitHub Projects](https://github.com/orgs/RooVetGit/projects/1).
 
-- Meer veelzijdige "OpenAI Compatible"-ondersteuning
-- xAI, Microsoft Azure AI, Alibaba Cloud Qwen, IBM Watsonx, Together AI, DeepInfra, Fireworks AI, Cohere, Perplexity AI, FriendliAI, Replicate
-- Verbeterde ondersteuning voor Ollama en LM Studio
+## Je bijdrage vinden & plannen
 
-### Modelondersteuning
+### Soorten bijdragen
 
-We willen dat Roo zo goed mogelijk werkt op zoveel mogelijk modellen, inclusief lokale modellen:
+- **Bugfixes:** Problemen in code oplossen.
+- **Nieuwe functies:** Functionaliteit toevoegen.
+- **Documentatie:** Handleidingen verbeteren en verduidelijken.
 
-- Lokale modelondersteuning via aangepaste systeemaansturing en workflows
-- Benchmarking, evaluaties en testcases
+### Issue-First-aanpak
 
-### Systeemondersteuning
+Elke bijdrage moet beginnen met een GitHub Issue.
 
-We willen dat Roo goed draait op ieders computer:
+- **Bestaande issues controleren:** Zoek in [GitHub Issues](https://github.com/RooVetGit/Roo-Code/issues).
+- **Issue aanmaken:** Gebruik de juiste templates:
+    - **Bugs:** "Bug Report"-template.
+    - **Functies:** "Detailed Feature Proposal"-template. Goedkeuring vereist voor je begint.
+- **Issues claimen:** Reageer en wacht op officiële toewijzing.
 
-- Cross-platform terminalintegratie
-- Sterke en consistente ondersteuning voor Mac, Windows en Linux
+**PR's zonder goedgekeurde issues kunnen worden gesloten.**
 
-### Documentatie
+### Bepalen waar je aan werkt
 
-We willen uitgebreide, toegankelijke documentatie voor alle gebruikers en bijdragers:
+- Bekijk het [GitHub Project](https://github.com/orgs/RooVetGit/projects/1) voor niet-toegewezen "Good First Issues".
+- Voor documentatie, bezoek [Roo Code Docs](https://github.com/RooVetGit/Roo-Code-Docs).
 
-- Uitgebreide gebruikershandleidingen en tutorials
-- Duidelijke API-documentatie
-- Betere bijdragersgids
-- Meertalige documentatiebronnen
-- Interactieve voorbeelden en codevoorbeelden
+### Bugs of problemen melden
 
-### Stabiliteit
+- Controleer eerst of er al meldingen zijn.
+- Maak nieuwe bugmeldingen met de ["Bug Report"-template](https://github.com/RooVetGit/Roo-Code/issues/new/choose).
+- **Beveiligingsproblemen:** Meld privé via [security advisories](https://github.com/RooVetGit/Roo-Code/security/advisories/new).
 
-We willen het aantal bugs aanzienlijk verminderen en geautomatiseerd testen uitbreiden:
+## Ontwikkelings- & indieningsproces
 
-- Debug logging-schakelaar
-- "Machine/Taak-informatie" kopieerknop voor bug/supportverzoeken
+### Ontwikkelomgeving instellen
 
-### Internationalisatie
+1. **Fork & Clone:**
 
-We willen dat Roo ieders taal spreekt:
-
-- Wij willen dat Roo Code ieders taal spreekt
-- Queremos que Roo Code hable el idioma de todos
-- हम चाहते हैं कि Roo Code हर किसी की भाषा बोले
-- نريد أن يتحدث Roo Code لغة الجميع
-
-We verwelkomen vooral bijdragen die onze roadmap-doelen ondersteunen. Als je werkt aan iets dat aansluit bij deze pijlers, vermeld dit dan in je PR-beschrijving.
-
-## Ontwikkelomgeving instellen
-
-1. **Kloon** de repo:
-
-```sh
-git clone https://github.com/RooVetGit/Roo-Code.git
+```
+git clone https://github.com/JOUW_GEBRUIKERSNAAM/Roo-Code.git
 ```
 
-2. **Installeer afhankelijkheden**:
+2. **Installeer afhankelijkheden:**
 
-```sh
+```
 npm run install:all
 ```
 
-3. **Start de webview (Vite/React-app met HMR)**:
+3. **Debuggen:** Open met VS Code (`F5`).
 
-```sh
-npm run dev
-```
+### Richtlijnen voor het schrijven van code
 
-4. **Debuggen**:
-   Druk op `F5` (of **Run** → **Start Debugging**) in VSCode om een nieuwe sessie met Roo Code te openen.
+- Eén gerichte PR per functie of fix.
+- Volg ESLint en TypeScript best practices.
+- Schrijf duidelijke, beschrijvende commits die verwijzen naar issues (bijv. `Fixes #123`).
+- Zorg voor grondige tests (`npm test`).
+- Rebase op de nieuwste `main`-branch vóór indiening.
 
-Wijzigingen aan de webview verschijnen direct. Wijzigingen aan de core-extensie vereisen een herstart van de extensiehost.
+### Een Pull Request indienen
 
-Je kunt ook een .vsix bouwen en deze direct in VSCode installeren:
+- Begin als **concept-PR** als je vroege feedback zoekt.
+- Beschrijf je wijzigingen duidelijk volgens de Pull Request Template.
+- Voeg screenshots/video's toe voor UI-wijzigingen.
+- Geef aan of documentatie-updates nodig zijn.
 
-```sh
-npm run build
-```
+### Pull Request beleid
 
-Een `.vsix`-bestand verschijnt in de `bin/`-map en kan worden geïnstalleerd met:
+- Moet verwijzen naar vooraf goedgekeurde en toegewezen issues.
+- PR's die niet aan het beleid voldoen, kunnen worden gesloten.
+- PR's moeten CI-tests doorstaan, aansluiten bij de roadmap en duidelijke documentatie hebben.
 
-```sh
-code --install-extension bin/roo-cline-<versie>.vsix
-```
+### Reviewproces
 
-## Code schrijven en indienen
+- **Dagelijkse triage:** Snelle controles door maintainers.
+- **Wekelijkse diepgaande review:** Uitgebreide beoordeling.
+- **Snel itereren** op basis van feedback.
 
-Iedereen kan code bijdragen aan Roo Code, maar we vragen je deze richtlijnen te volgen zodat je bijdrage soepel kan worden geïntegreerd:
+## Juridisch
 
-1. **Houd Pull Requests gefocust**
-    - Beperk PR's tot één functie of bugfix
-    - Splits grotere wijzigingen op in kleinere, gerelateerde PR's
-    - Maak logische commits die onafhankelijk kunnen worden beoordeeld
-
-2. **Codekwaliteit**
-    - Alle PR's moeten slagen voor CI-checks, inclusief linting en formatting
-    - Los alle ESLint-waarschuwingen of -fouten op voor je indient
-    - Reageer op alle feedback van Ellipsis, onze geautomatiseerde code-reviewtool
-    - Volg TypeScript best practices en behoud typesafety
-
-3. **Testen**
-    - Voeg tests toe voor nieuwe functies
-    - Voer `npm test` uit om te controleren of alle tests slagen
-    - Werk bestaande tests bij als je wijzigingen ze beïnvloeden
-    - Voeg waar mogelijk zowel unit- als integratietests toe
-
-4. **Commitrichtlijnen**
-    - Schrijf duidelijke, beschrijvende commitberichten
-    - Verwijs naar relevante issues in commits met #issue-nummer
-
-5. **Voor het indienen**
-    - Rebase je branch op de laatste main
-    - Controleer of je branch succesvol bouwt
-    - Controleer of alle tests slagen
-    - Controleer je wijzigingen op debuggingcode of console.logs
-
-6. **Pull Request-beschrijving**
-    - Beschrijf duidelijk wat je wijzigingen doen
-    - Voeg stappen toe om de wijzigingen te testen
-    - Noem eventuele breaking changes
-    - Voeg screenshots toe bij UI-wijzigingen
-
-## Bijdrageovereenkomst
-
-Door een pull request in te dienen, ga je ermee akkoord dat je bijdragen worden gelicenseerd onder dezelfde licentie als het project ([Apache 2.0](../../LICENSE)).
+Door een pull request in te dienen, ga je ermee akkoord dat je bijdragen worden gelicenseerd onder de Apache 2.0-licentie, in overeenstemming met de licentie van Roo Code.

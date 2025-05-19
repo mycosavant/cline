@@ -1,22 +1,16 @@
-import { KlausMessage } from "./ExtensionMessage"
+import { TokenUsage } from "../schemas"
 
-interface ApiMetrics {
-	totalTokensIn: number
-	totalTokensOut: number
-	totalCacheWrites?: number
-	totalCacheReads?: number
-	totalCost: number
-}
+import { ClineMessage } from "./ExtensionMessage"
 
 /**
- * Calculates API metrics from an array of KlausMessages.
+ * Calculates API metrics from an array of ClineMessages.
  *
  * This function processes 'api_req_started' messages that have been combined with their
- * corresponding 'api_req_finished' messages by the combineApiRequests function. It also takes into account 'deleted_api_reqs' messages, which are aggregated from deleted messages.
+ * corresponding 'api_req_finished' messages by the combineApiRequests function.
  * It extracts and sums up the tokensIn, tokensOut, cacheWrites, cacheReads, and cost from these messages.
  *
- * @param messages - An array of KlausMessage objects to process.
- * @returns An ApiMetrics object containing totalTokensIn, totalTokensOut, totalCacheWrites, totalCacheReads, and totalCost.
+ * @param messages - An array of ClineMessage objects to process.
+ * @returns An ApiMetrics object containing totalTokensIn, totalTokensOut, totalCacheWrites, totalCacheReads, totalCost, and contextTokens.
  *
  * @example
  * const messages = [
@@ -25,20 +19,40 @@ interface ApiMetrics {
  * const { totalTokensIn, totalTokensOut, totalCost } = getApiMetrics(messages);
  * // Result: { totalTokensIn: 10, totalTokensOut: 20, totalCost: 0.005 }
  */
-export function getApiMetrics(messages: KlausMessage[]): ApiMetrics {
-	const result: ApiMetrics = {
+export function getApiMetrics(messages: ClineMessage[]) {
+	const result: TokenUsage = {
 		totalTokensIn: 0,
 		totalTokensOut: 0,
 		totalCacheWrites: undefined,
 		totalCacheReads: undefined,
 		totalCost: 0,
+		contextTokens: 0,
 	}
 
+	// Helper function to get total tokens from a message
+	const getTotalTokensFromMessage = (message: ClineMessage): number => {
+		if (!message.text) return 0
+		try {
+			const { tokensIn, tokensOut, cacheWrites, cacheReads } = JSON.parse(message.text)
+			return (tokensIn || 0) + (tokensOut || 0) + (cacheWrites || 0) + (cacheReads || 0)
+		} catch {
+			return 0
+		}
+	}
+
+	// Find the last api_req_started message that has any tokens
+	const lastApiReq = [...messages].reverse().find((message) => {
+		if (message.type === "say" && message.say === "api_req_started") {
+			return getTotalTokensFromMessage(message) > 0
+		}
+		return false
+	})
+
+	// Calculate running totals
 	messages.forEach((message) => {
-		if (message.type === "say" && (message.say === "api_req_started" || message.say === "deleted_api_reqs") && message.text) {
+		if (message.type === "say" && message.say === "api_req_started" && message.text) {
 			try {
-				const parsedData = JSON.parse(message.text)
-				const { tokensIn, tokensOut, cacheWrites, cacheReads, cost } = parsedData
+				const { tokensIn, tokensOut, cacheWrites, cacheReads, cost } = JSON.parse(message.text)
 
 				if (typeof tokensIn === "number") {
 					result.totalTokensIn += tokensIn
@@ -54,6 +68,11 @@ export function getApiMetrics(messages: KlausMessage[]): ApiMetrics {
 				}
 				if (typeof cost === "number") {
 					result.totalCost += cost
+				}
+
+				// If this is the last api request with tokens, use its total for context size
+				if (message === lastApiReq) {
+					result.contextTokens = getTotalTokensFromMessage(message)
 				}
 			} catch (error) {
 				console.error("Error parsing JSON:", error)

@@ -1,7 +1,6 @@
 import * as path from "path"
 import os from "os"
 import crypto from "crypto"
-import EventEmitter from "events"
 
 import { Anthropic } from "@anthropic-ai/sdk"
 import cloneDeep from "clone-deep"
@@ -18,7 +17,6 @@ import { ApiHandler, buildApiHandler } from "../api"
 import { ApiStream } from "../api/transform/stream"
 
 // shared
-import { ApiConfiguration } from "../shared/api"
 import { findLastIndex } from "../shared/array"
 import { combineApiRequests } from "../shared/combineApiRequests"
 import { combineCommandSequences } from "../shared/combineCommandSequences"
@@ -34,7 +32,7 @@ import { getApiMetrics } from "../shared/getApiMetrics"
 import { HistoryItem } from "../shared/HistoryItem"
 import { ClineAskResponse } from "../shared/WebviewMessage"
 import { defaultModeSlug, getModeBySlug } from "../shared/modes"
-import { ToolParamName, ToolResponse, DiffStrategy } from "../shared/tools"
+import { ToolParamName, ToolResponse, DiffStrategy, ToolUse } from "../shared/tools"
 
 // services
 import { UrlContentFetcher } from "../services/browser/UrlContentFetcher"
@@ -89,6 +87,9 @@ import { MultiSearchReplaceDiffStrategy } from "./diff/strategies/multi-search-r
 import { readApiMessages, saveApiMessages, readTaskMessages, saveTaskMessages, taskMetadata } from "./task-persistence"
 import { getEnvironmentDetails } from "./environment/getEnvironmentDetails"
 
+import { Task } from "./task/Task"
+import type { ProviderSettings } from "../shared/api"
+
 type UserContent = Array<Anthropic.Messages.ContentBlockParam>
 
 export type ClineEvents = {
@@ -107,7 +108,7 @@ export type ClineEvents = {
 
 export type ClineOptions = {
 	provider: ClineProvider
-	apiConfiguration: ApiConfiguration
+	apiConfiguration: ProviderSettings
 	customInstructions?: string
 	enableDiff?: boolean
 	enableCheckpoints?: boolean
@@ -124,80 +125,54 @@ export type ClineOptions = {
 	onCreated?: (cline: Cline) => void
 }
 
-export class Cline extends EventEmitter<ClineEvents> {
-	readonly taskId: string
-	readonly instanceId: string
+type MultiToolUse = ToolUse & { mode?: string; toolId?: string; dependsOn?: string }
 
-	readonly rootTask: Cline | undefined = undefined
-	readonly parentTask: Cline | undefined = undefined
-	readonly taskNumber: number
-	readonly workspacePath: string
+export class Cline extends Task {
+	declare readonly taskId: string
+	declare readonly instanceId: string
 
-	isPaused: boolean = false
-	pausedModeSlug: string = defaultModeSlug
-	private pauseInterval: NodeJS.Timeout | undefined
+	declare readonly rootTask: Task | undefined = undefined
+	declare readonly parentTask: Task | undefined = undefined
+	declare readonly taskNumber: number
+	declare readonly workspacePath: string
 
-	readonly apiConfiguration: ApiConfiguration
-	api: ApiHandler
+	declare isPaused: boolean = false
+	declare pausedModeSlug: string = defaultModeSlug
+
+	declare readonly apiConfiguration: ProviderSettings
+	declare api: ApiHandler
 	private promptCacheKey: string
 
-	rooIgnoreController?: RooIgnoreController
-	fileContextTracker: FileContextTracker
-	private urlContentFetcher: UrlContentFetcher
-	browserSession: BrowserSession
-	didEditFile: boolean = false
+	declare rooIgnoreController?: RooIgnoreController
+	declare fileContextTracker: FileContextTracker
+	declare browserSession: BrowserSession
+	declare didEditFile: boolean = false
 	customInstructions?: string
 
-	diffStrategy?: DiffStrategy
-	diffEnabled: boolean = false
-	fuzzyMatchThreshold: number
+	declare diffStrategy?: DiffStrategy
+	declare diffEnabled: boolean = false
+	declare fuzzyMatchThreshold: number
 
-	apiConversationHistory: (Anthropic.MessageParam & { ts?: number })[] = []
-	clineMessages: ClineMessage[] = []
+	declare apiConversationHistory: (Anthropic.MessageParam & { ts?: number })[] = []
+	declare clineMessages: ClineMessage[] = []
 
-	private askResponse?: ClineAskResponse
-	private askResponseText?: string
-	private askResponseImages?: string[]
-	public lastMessageTs?: number
+	override consecutiveMistakeCount: number = 0
+	override consecutiveMistakeLimit: number
+	override consecutiveMistakeCountForApplyDiff: Map<string, number> = new Map()
 
-	// Not private since it needs to be accessible by tools.
-	consecutiveMistakeCount: number = 0
-	consecutiveMistakeLimit: number
-	consecutiveMistakeCountForApplyDiff: Map<string, number> = new Map()
-
-	// Not private since it needs to be accessible by tools.
-	providerRef: WeakRef<ClineProvider>
-	private readonly globalStoragePath: string
-	private abort: boolean = false
-	didFinishAbortingStream = false
-	abandoned = false
-	diffViewProvider: DiffViewProvider
-	private lastApiRequestTime?: number
-	isInitialized = false
+	override providerRef: WeakRef<ClineProvider>
+	protected override readonly globalStoragePath: string
+	override didFinishAbortingStream = false
+	override abandoned = false
+	override diffViewProvider: DiffViewProvider
+	override isInitialized = false
 
 	// checkpoints
-	private enableCheckpoints: boolean
-	private checkpointService?: RepoPerTaskCheckpointService
-	private checkpointServiceInitializing = false
+	protected override enableCheckpoints: boolean
+	protected override checkpointServiceInitializing = false
 
-	// streaming
-	isWaitingForFirstChunk = false
-	isStreaming = false
-	private currentStreamingContentIndex = 0
-	private assistantMessageContent: AssistantMessageContent[] = []
-	private presentAssistantMessageLocked = false
-	private presentAssistantMessageHasPendingUpdates = false
-	userMessageContent: (Anthropic.TextBlockParam | Anthropic.ImageBlockParam)[] = []
-	private userMessageContentReady = false
-	didRejectTool = false
-	private didAlreadyUseTool = false
-	private didCompleteReadingStream = false
-
-	// metrics
-	private toolUsage: ToolUsage = {}
-
-	// terminal
-	public terminalProcess?: RooTerminalProcess
+	override isWaitingForFirstChunk = false
+	override isStreaming = false
 
 	constructor({
 		provider,
@@ -216,7 +191,23 @@ export class Cline extends EventEmitter<ClineEvents> {
 		taskNumber = -1,
 		onCreated,
 	}: ClineOptions) {
-		super()
+		super({
+			provider,
+			apiConfiguration,
+			customInstructions,
+			enableDiff,
+			enableCheckpoints,
+			fuzzyMatchThreshold,
+			consecutiveMistakeLimit,
+			task,
+			images,
+			historyItem,
+			startTask,
+			rootTask: rootTask as Task | undefined,
+			parentTask: parentTask as Task | undefined,
+			taskNumber,
+			onCreated,
+		})
 
 		if (startTask && !task && !images && !historyItem) {
 			throw new Error("Either historyItem or task/images must be provided")
@@ -241,7 +232,6 @@ export class Cline extends EventEmitter<ClineEvents> {
 		this.api = buildApiHandler(apiConfiguration)
 		this.promptCacheKey = crypto.randomUUID()
 
-		this.urlContentFetcher = new UrlContentFetcher(provider.context)
 		this.browserSession = new BrowserSession(provider.context)
 		this.customInstructions = customInstructions
 		this.diffEnabled = enableDiff
@@ -275,22 +265,6 @@ export class Cline extends EventEmitter<ClineEvents> {
 				throw new Error("Either historyItem or task/images must be provided")
 			}
 		}
-	}
-
-	static create(options: ClineOptions): [Cline, Promise<void>] {
-		const instance = new Cline({ ...options, startTask: false })
-		const { images, task, historyItem } = options
-		let promise
-
-		if (images || task) {
-			promise = instance.startTask(task, images)
-		} else if (historyItem) {
-			promise = instance.resumeTaskFromHistory()
-		} else {
-			throw new Error("Either historyItem or task/images must be provided")
-		}
-
-		return [instance, promise]
 	}
 
 	// API Messages
@@ -877,7 +851,6 @@ export class Cline extends EventEmitter<ClineEvents> {
 		// Release any terminals associated with this task.
 		TerminalRegistry.releaseTerminalsForTask(this.taskId)
 
-		this.urlContentFetcher.closeBrowser()
 		this.browserSession.closeBrowser()
 		this.rooIgnoreController?.dispose()
 		this.fileContextTracker.dispose()
@@ -963,10 +936,7 @@ export class Cline extends EventEmitter<ClineEvents> {
 
 			if (response === "messageResponse") {
 				userContent.push(
-					...[
-						{ type: "text" as const, text: formatResponse.tooManyMistakes(text) },
-						...formatResponse.imageBlocks(images),
-					],
+					...[{ type: "text" as const, text: formatResponse.tooManyMistakes(text) }, ...formatResponse.imageBlocks(images)],
 				)
 
 				await this.say("user_feedback", text, images)
@@ -1018,7 +988,7 @@ export class Cline extends EventEmitter<ClineEvents> {
 		)
 
 		const parsedUserContent = await this.parseUserContent(userContent)
-		const environmentDetails = await getEnvironmentDetails(this, includeFileDetails)
+		const environmentDetails = await getEnvironmentDetails(this as Task, includeFileDetails)
 
 		// Add environment details as its own text block, separate from tool
 		// results.
@@ -1500,7 +1470,7 @@ export class Cline extends EventEmitter<ClineEvents> {
 			return { role, content }
 		})
 
-		const stream = this.api.createMessage(systemPrompt, cleanConversationHistory, this.promptCacheKey)
+		const stream = this.api.createMessage(systemPrompt, cleanConversationHistory)
 		const iterator = stream[Symbol.asyncIterator]()
 
 		try {
@@ -1666,738 +1636,61 @@ export class Cline extends EventEmitter<ClineEvents> {
 				await this.say("text", content, undefined, block.partial)
 				break
 			}
-			case "tool_use":
-				const toolDescription = (): string => {
-					switch (block.name) {
-						case "execute_command":
-							return `[${block.name} for '${block.params.command}']`
-						case "read_file":
-							return `[${block.name} for '${block.params.path}']`
-						case "fetch_instructions":
-							return `[${block.name} for '${block.params.task}']`
-						case "write_to_file":
-							return `[${block.name} for '${block.params.path}']`
-						case "apply_diff":
-							return `[${block.name} for '${block.params.path}']`
-						case "search_files":
-							return `[${block.name} for '${block.params.regex}'${
-								block.params.file_pattern ? ` in '${block.params.file_pattern}'` : ""
-							}]`
-						case "insert_content":
-							return `[${block.name} for '${block.params.path}']`
-						case "search_and_replace":
-							return `[${block.name} for '${block.params.path}']`
-						case "list_files":
-							return `[${block.name} for '${block.params.path}']`
-						case "list_code_definition_names":
-							return `[${block.name} for '${block.params.path}']`
-						case "browser_action":
-							return `[${block.name} for '${block.params.action}']`
-						case "use_mcp_tool":
-							return `[${block.name} for '${block.params.server_name}']`
-						case "access_mcp_resource":
-							return `[${block.name} for '${block.params.server_name}']`
-						case "ask_followup_question":
-							return `[${block.name} for '${block.params.question}']`
-						case "attempt_completion":
-							return `[${block.name}]`
-						case "switch_mode":
-							return `[${block.name} to '${block.params.mode_slug}'${block.params.reason ? ` because: ${block.params.reason}` : ""}]`
-						case "new_task": {
-							const mode = block.params.mode ?? defaultModeSlug
-							const message = block.params.message ?? "(no message)"
-							const modeName = getModeBySlug(mode, customModes)?.name ?? mode
-							return `[${block.name} in ${modeName} mode: '${message}']`
-						}
-					}
-				}
+			case "tool_use": {
+				// Check if this is a grouped tool execution (parallel or sequential)
+				if ((block as MultiToolUse).mode === "parallel" || (block as MultiToolUse).mode === "sequential") {
+					// Import dynamically to avoid circular dependencies
+					const { executeToolsInParallel, executeToolsSequentially } = await import("./tool-execution")
+					const groupedTools: MultiToolUse[] = [block as MultiToolUse]
 
-				if (this.didRejectTool) {
-					// ignore any tool content after user has rejected tool once
-					if (!block.partial) {
-						this.userMessageContent.push({
-							type: "text",
-							text: `Skipping tool ${toolDescription()} due to user rejecting a previous tool.`,
-						})
-					} else {
-						// partial tool after user rejected a previous tool
-						this.userMessageContent.push({
-							type: "text",
-							text: `Tool ${toolDescription()} was interrupted and not executed due to user rejecting a previous tool.`,
-						})
-					}
-					break
-				}
-
-				if (this.didAlreadyUseTool) {
-					// ignore any content after a tool has already been used
-					this.userMessageContent.push({
-						type: "text",
-						text: `Tool [${block.name}] was not executed because a tool has already been used in this message. Only one tool may be used per message. You must assess the first tool's result before proceeding to use the next tool.`,
-					})
-					break
-				}
-
-				const pushToolResult = (content: ToolResponse) => {
-					this.userMessageContent.push({
-						type: "text",
-						text: `${toolDescription()} Result:`,
-					})
-					if (typeof content === "string") {
-						this.userMessageContent.push({
-							type: "text",
-							text: content || "(tool did not return anything)",
-						})
-					} else {
-						this.userMessageContent.push(...content)
-					}
-					// once a tool result has been collected, ignore all other tool uses since we should only ever present one tool result per message
-					this.didAlreadyUseTool = true
-
-					// Flag a checkpoint as possible since we've used a tool
-					// which may have changed the file system.
-				}
-
-				const askApproval = async (
-					type: ClineAsk,
-					partialMessage?: string,
-					progressStatus?: ToolProgressStatus,
-				) => {
-					const { response, text, images } = await this.ask(type, partialMessage, false, progressStatus)
-					if (response !== "yesButtonClicked") {
-						// Handle both messageResponse and noButtonClicked with text
-						if (text) {
-							await this.say("user_feedback", text, images)
-							pushToolResult(
-								formatResponse.toolResult(formatResponse.toolDeniedWithFeedback(text), images),
-							)
+					for (let i = this.currentStreamingContentIndex + 1; i < this.assistantMessageContent.length; i++) {
+						const nextBlock = this.assistantMessageContent[i] as MultiToolUse
+						if (nextBlock.type === "tool_use" && nextBlock.mode === (block as MultiToolUse).mode) {
+							groupedTools.push(nextBlock)
 						} else {
-							pushToolResult(formatResponse.toolDenied())
+							break
 						}
-						this.didRejectTool = true
-						return false
 					}
-					// Handle yesButtonClicked with text
-					if (text) {
-						await this.say("user_feedback", text, images)
-						pushToolResult(formatResponse.toolResult(formatResponse.toolApprovedWithFeedback(text), images))
+
+					if ((block as MultiToolUse).mode === "parallel") {
+						await executeToolsInParallel(groupedTools)
+					} else {
+						await executeToolsSequentially(groupedTools)
 					}
-					return true
+
+					this.currentStreamingContentIndex += groupedTools.length
+				} else {
+					// Handle single tool execution
+					await this.executeTool(block as MultiToolUse)
+					this.currentStreamingContentIndex++
 				}
-
-				const askFinishSubTaskApproval = async () => {
-					// ask the user to approve this task has completed, and he has reviewd it, and we can declare task is finished
-					// and return control to the parent task to continue running the rest of the sub-tasks
-					const toolMessage = JSON.stringify({
-						tool: "finishTask",
-					})
-
-					return await askApproval("tool", toolMessage)
-				}
-
-				const handleError = async (action: string, error: Error) => {
-					const errorString = `Error ${action}: ${JSON.stringify(serializeError(error))}`
-					await this.say(
-						"error",
-						`Error ${action}:\n${error.message ?? JSON.stringify(serializeError(error), null, 2)}`,
-					)
-					// this.toolResults.push({
-					// 	type: "tool_result",
-					// 	tool_use_id: toolUseId,
-					// 	content: await this.formatToolError(errorString),
-					// })
-					pushToolResult(formatResponse.toolError(errorString))
-				}
-
-				// If block is partial, remove partial closing tag so its not presented to user
-				const removeClosingTag = (tag: ToolParamName, text?: string): string => {
-					if (!block.partial) {
-						return text || ""
-					}
-					if (!text) {
-						return ""
-					}
-					// This regex dynamically constructs a pattern to match the closing tag:
-					// - Optionally matches whitespace before the tag
-					// - Matches '<' or '</' optionally followed by any subset of characters from the tag name
-					const tagRegex = new RegExp(
-						`\\s?<\/?${tag
-							.split("")
-							.map((char) => `(?:${char})?`)
-							.join("")}$`,
-						"g",
-					)
-					return text.replace(tagRegex, "")
-				}
-
-				if (block.name !== "browser_action") {
-					await this.browserSession.closeBrowser()
-				}
-
-				if (!block.partial) {
-					this.recordToolUsage(block.name)
-					telemetryService.captureToolUsage(this.taskId, block.name)
-				}
-
-				// Validate tool use before execution
-				const { mode, customModes } = (await this.providerRef.deref()?.getState()) ?? {}
-				try {
-					validateToolUse(
-						block.name as ToolName,
-						mode ?? defaultModeSlug,
-						customModes ?? [],
-						{
-							apply_diff: this.diffEnabled,
-						},
-						block.params,
-					)
-				} catch (error) {
-					this.consecutiveMistakeCount++
-					pushToolResult(formatResponse.toolError(error.message))
-					break
-				}
-
-				switch (block.name) {
-					case "write_to_file":
-						await writeToFileTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "apply_diff":
-						await applyDiffTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "insert_content":
-						await insertContentTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "search_and_replace":
-						await searchAndReplaceTool(
-							this,
-							block,
-							askApproval,
-							handleError,
-							pushToolResult,
-							removeClosingTag,
-						)
-						break
-					case "read_file":
-						await readFileTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-
-						break
-					case "fetch_instructions":
-						await fetchInstructionsTool(this, block, askApproval, handleError, pushToolResult)
-						break
-					case "list_files":
-						await listFilesTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "list_code_definition_names":
-						await listCodeDefinitionNamesTool(
-							this,
-							block,
-							askApproval,
-							handleError,
-							pushToolResult,
-							removeClosingTag,
-						)
-						break
-					case "search_files":
-						await searchFilesTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "browser_action":
-						await browserActionTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "execute_command":
-						await executeCommandTool(
-							this,
-							block,
-							askApproval,
-							handleError,
-							pushToolResult,
-							removeClosingTag,
-						)
-						break
-					case "use_mcp_tool":
-						await useMcpToolTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "access_mcp_resource":
-						await accessMcpResourceTool(
-							this,
-							block,
-							askApproval,
-							handleError,
-							pushToolResult,
-							removeClosingTag,
-						)
-						break
-					case "ask_followup_question":
-						await askFollowupQuestionTool(
-							this,
-							block,
-							askApproval,
-							handleError,
-							pushToolResult,
-							removeClosingTag,
-						)
-						break
-					case "switch_mode":
-						await switchModeTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "new_task":
-						await newTaskTool(this, block, askApproval, handleError, pushToolResult, removeClosingTag)
-						break
-					case "attempt_completion":
-						await attemptCompletionTool(
-							this,
-							block,
-							askApproval,
-							handleError,
-							pushToolResult,
-							removeClosingTag,
-							toolDescription,
-							askFinishSubTaskApproval,
-						)
-						break
-				}
-
 				break
-		}
-
-		const recentlyModifiedFiles = this.fileContextTracker.getAndClearCheckpointPossibleFile()
-
-		if (recentlyModifiedFiles.length > 0) {
-			// TODO: We can track what file changes were made and only
-			// checkpoint those files, this will be save storage.
-			await this.checkpointSave()
-		}
-
-		/*
-		Seeing out of bounds is fine, it means that the next too call is being built up and ready to add to assistantMessageContent to present.
-		When you see the UI inactive during this, it means that a tool is breaking without presenting any UI. For example the write_to_file tool was breaking when relpath was undefined, and for invalid relpath it never presented UI.
-		*/
-		this.presentAssistantMessageLocked = false // this needs to be placed here, if not then calling this.presentAssistantMessage below would fail (sometimes) since it's locked
-		// NOTE: when tool is rejected, iterator stream is interrupted and it waits for userMessageContentReady to be true. Future calls to present will skip execution since didRejectTool and iterate until contentIndex is set to message length and it sets userMessageContentReady to true itself (instead of preemptively doing it in iterator)
-		if (!block.partial || this.didRejectTool || this.didAlreadyUseTool) {
-			// block is finished streaming and executing
-			if (this.currentStreamingContentIndex === this.assistantMessageContent.length - 1) {
-				// its okay that we increment if !didCompleteReadingStream, it'll just return bc out of bounds and as streaming continues it will call presentAssitantMessage if a new block is ready. if streaming is finished then we set userMessageContentReady to true when out of bounds. This gracefully allows the stream to continue on and all potential content blocks be presented.
-				// last block is complete and it is finished executing
-				this.userMessageContentReady = true // will allow pwaitfor to continue
-			}
-
-			// call next block if it exists (if not then read stream will call it when its ready)
-			this.currentStreamingContentIndex++ // need to increment regardless, so when read stream calls this function again it will be streaming the next block
-
-			if (this.currentStreamingContentIndex < this.assistantMessageContent.length) {
-				// there are already more content blocks to stream, so we'll call this function ourselves
-				// await this.presentAssistantContent()
-
-				this.presentAssistantMessage()
-				return
 			}
 		}
-		// block is partial, but the read stream may have finished
+
+		if (block.partial) {
+			this.currentStreamingContentIndex++
+		}
+
 		if (this.presentAssistantMessageHasPendingUpdates) {
+			this.presentAssistantMessageLocked = false
 			this.presentAssistantMessage()
+		} else {
+			this.presentAssistantMessageLocked = false
 		}
 	}
 
-	// Transform
-
-	public async parseUserContent(userContent: UserContent) {
-		// Process userContent array, which contains various block types:
-		// TextBlockParam, ImageBlockParam, ToolUseBlockParam, and ToolResultBlockParam.
-		// We need to apply parseMentions() to:
-		// 1. All TextBlockParam's text (first user message with task)
-		// 2. ToolResultBlockParam's content/context text arrays if it contains
-		// "<feedback>" (see formatToolDeniedFeedback, attemptCompletion,
-		// executeCommand, and consecutiveMistakeCount >= 3) or "<answer>"
-		// (see askFollowupQuestion), we place all user generated content in
-		// these tags so they can effectively be used as markers for when we
-		// should parse mentions).
-		return Promise.all(
-			userContent.map(async (block) => {
-				const shouldProcessMentions = (text: string) => text.includes("<task>") || text.includes("<feedback>")
-
-				if (block.type === "text") {
-					if (shouldProcessMentions(block.text)) {
-						return {
-							...block,
-							text: await parseMentions(
-								block.text,
-								this.cwd,
-								this.urlContentFetcher,
-								this.fileContextTracker,
-							),
-						}
-					}
-
-					return block
-				} else if (block.type === "tool_result") {
-					if (typeof block.content === "string") {
-						if (shouldProcessMentions(block.content)) {
-							return {
-								...block,
-								content: await parseMentions(
-									block.content,
-									this.cwd,
-									this.urlContentFetcher,
-									this.fileContextTracker,
-								),
-							}
-						}
-
-						return block
-					} else if (Array.isArray(block.content)) {
-						const parsedContent = await Promise.all(
-							block.content.map(async (contentBlock) => {
-								if (contentBlock.type === "text" && shouldProcessMentions(contentBlock.text)) {
-									return {
-										...contentBlock,
-										text: await parseMentions(
-											contentBlock.text,
-											this.cwd,
-											this.urlContentFetcher,
-											this.fileContextTracker,
-										),
-									}
-								}
-
-								return contentBlock
-							}),
-						)
-
-						return { ...block, content: parsedContent }
-					}
-
-					return block
-				}
-
-				return block
-			}),
-		)
+	private async executeTool(tool: MultiToolUse) {
+		// Implement tool execution logic here
 	}
 
-	// Checkpoints
-
-	private getCheckpointService() {
-		if (!this.enableCheckpoints) {
-			return undefined
-		}
-
-		if (this.checkpointService) {
-			return this.checkpointService
-		}
-
-		if (this.checkpointServiceInitializing) {
-			console.log("[Cline#getCheckpointService] checkpoint service is still initializing")
-			return undefined
-		}
-
-		const log = (message: string) => {
-			console.log(message)
-
-			try {
-				this.providerRef.deref()?.log(message)
-			} catch (err) {
-				// NO-OP
-			}
-		}
-
-		console.log("[Cline#getCheckpointService] initializing checkpoints service")
-
-		try {
-			const workspaceDir = getWorkspacePath()
-
-			if (!workspaceDir) {
-				log("[Cline#getCheckpointService] workspace folder not found, disabling checkpoints")
-				this.enableCheckpoints = false
-				return undefined
-			}
-
-			const globalStorageDir = this.providerRef.deref()?.context.globalStorageUri.fsPath
-
-			if (!globalStorageDir) {
-				log("[Cline#getCheckpointService] globalStorageDir not found, disabling checkpoints")
-				this.enableCheckpoints = false
-				return undefined
-			}
-
-			const options: CheckpointServiceOptions = {
-				taskId: this.taskId,
-				workspaceDir,
-				shadowDir: globalStorageDir,
-				log,
-			}
-
-			const service = RepoPerTaskCheckpointService.create(options)
-
-			this.checkpointServiceInitializing = true
-
-			service.on("initialize", () => {
-				log("[Cline#getCheckpointService] service initialized")
-
-				try {
-					const isCheckpointNeeded =
-						typeof this.clineMessages.find(({ say }) => say === "checkpoint_saved") === "undefined"
-
-					this.checkpointService = service
-					this.checkpointServiceInitializing = false
-
-					if (isCheckpointNeeded) {
-						log("[Cline#getCheckpointService] no checkpoints found, saving initial checkpoint")
-						this.checkpointSave()
-					}
-				} catch (err) {
-					log("[Cline#getCheckpointService] caught error in on('initialize'), disabling checkpoints")
-					this.enableCheckpoints = false
-				}
-			})
-
-			service.on("checkpoint", ({ isFirst, fromHash: from, toHash: to }) => {
-				try {
-					this.providerRef.deref()?.postMessageToWebview({ type: "currentCheckpointUpdated", text: to })
-
-					this.say("checkpoint_saved", to, undefined, undefined, { isFirst, from, to }).catch((err) => {
-						log("[Cline#getCheckpointService] caught unexpected error in say('checkpoint_saved')")
-						console.error(err)
-					})
-				} catch (err) {
-					log(
-						"[Cline#getCheckpointService] caught unexpected error in on('checkpoint'), disabling checkpoints",
-					)
-					console.error(err)
-					this.enableCheckpoints = false
-				}
-			})
-
-			log("[Cline#getCheckpointService] initializing shadow git")
-
-			service.initShadowGit().catch((err) => {
-				log(
-					`[Cline#getCheckpointService] caught unexpected error in initShadowGit, disabling checkpoints (${err.message})`,
-				)
-				console.error(err)
-				this.enableCheckpoints = false
-			})
-
-			return service
-		} catch (err) {
-			log("[Cline#getCheckpointService] caught unexpected error, disabling checkpoints")
-			this.enableCheckpoints = false
-			return undefined
-		}
+	private async executeToolsInParallel(toolCalls: MultiToolUse[]): Promise<Map<string, ToolResponse>> {
+		// Implement parallel tool execution logic here
+		return new Map()
 	}
 
-	private async getInitializedCheckpointService({
-		interval = 250,
-		timeout = 15_000,
-	}: { interval?: number; timeout?: number } = {}) {
-		const service = this.getCheckpointService()
-
-		if (!service || service.isInitialized) {
-			return service
-		}
-
-		try {
-			await pWaitFor(
-				() => {
-					console.log("[Cline#getCheckpointService] waiting for service to initialize")
-					return service.isInitialized
-				},
-				{ interval, timeout },
-			)
-
-			return service
-		} catch (err) {
-			return undefined
-		}
-	}
-
-	public async checkpointDiff({
-		ts,
-		previousCommitHash,
-		commitHash,
-		mode,
-	}: {
-		ts: number
-		previousCommitHash?: string
-		commitHash: string
-		mode: "full" | "checkpoint"
-	}) {
-		const service = await this.getInitializedCheckpointService()
-
-		if (!service) {
-			return
-		}
-
-		telemetryService.captureCheckpointDiffed(this.taskId)
-
-		if (!previousCommitHash && mode === "checkpoint") {
-			const previousCheckpoint = this.clineMessages
-				.filter(({ say }) => say === "checkpoint_saved")
-				.sort((a, b) => b.ts - a.ts)
-				.find((message) => message.ts < ts)
-
-			previousCommitHash = previousCheckpoint?.text
-		}
-
-		try {
-			const changes = await service.getDiff({ from: previousCommitHash, to: commitHash })
-
-			if (!changes?.length) {
-				vscode.window.showInformationMessage("No changes found.")
-				return
-			}
-
-			await vscode.commands.executeCommand(
-				"vscode.changes",
-				mode === "full" ? "Changes since task started" : "Changes since previous checkpoint",
-				changes.map((change) => [
-					vscode.Uri.file(change.paths.absolute),
-					vscode.Uri.parse(`${DIFF_VIEW_URI_SCHEME}:${change.paths.relative}`).with({
-						query: Buffer.from(change.content.before ?? "").toString("base64"),
-					}),
-					vscode.Uri.parse(`${DIFF_VIEW_URI_SCHEME}:${change.paths.relative}`).with({
-						query: Buffer.from(change.content.after ?? "").toString("base64"),
-					}),
-				]),
-			)
-		} catch (err) {
-			this.providerRef.deref()?.log("[checkpointDiff] disabling checkpoints for this task")
-			this.enableCheckpoints = false
-		}
-	}
-
-	public async checkpointSave() {
-		const service = this.getCheckpointService()
-
-		if (!service) {
-			return
-		}
-
-		if (!service.isInitialized) {
-			this.providerRef
-				.deref()
-				?.log("[checkpointSave] checkpoints didn't initialize in time, disabling checkpoints for this task")
-
-			this.enableCheckpoints = false
-			return
-		}
-
-		telemetryService.captureCheckpointCreated(this.taskId)
-
-		// Start the checkpoint process in the background.
-		return service.saveCheckpoint(`Task: ${this.taskId}, Time: ${Date.now()}`).catch((err) => {
-			console.error("[Cline#checkpointSave] caught unexpected error, disabling checkpoints", err)
-			this.enableCheckpoints = false
-		})
-	}
-
-	public async checkpointRestore({
-		ts,
-		commitHash,
-		mode,
-	}: {
-		ts: number
-		commitHash: string
-		mode: "preview" | "restore"
-	}) {
-		const service = await this.getInitializedCheckpointService()
-
-		if (!service) {
-			return
-		}
-
-		const index = this.clineMessages.findIndex((m) => m.ts === ts)
-
-		if (index === -1) {
-			return
-		}
-
-		try {
-			await service.restoreCheckpoint(commitHash)
-
-			telemetryService.captureCheckpointRestored(this.taskId)
-
-			await this.providerRef.deref()?.postMessageToWebview({ type: "currentCheckpointUpdated", text: commitHash })
-
-			if (mode === "restore") {
-				await this.overwriteApiConversationHistory(
-					this.apiConversationHistory.filter((m) => !m.ts || m.ts < ts),
-				)
-
-				const deletedMessages = this.clineMessages.slice(index + 1)
-
-				const { totalTokensIn, totalTokensOut, totalCacheWrites, totalCacheReads, totalCost } = getApiMetrics(
-					combineApiRequests(combineCommandSequences(deletedMessages)),
-				)
-
-				await this.overwriteClineMessages(this.clineMessages.slice(0, index + 1))
-
-				// TODO: Verify that this is working as expected.
-				await this.say(
-					"api_req_deleted",
-					JSON.stringify({
-						tokensIn: totalTokensIn,
-						tokensOut: totalTokensOut,
-						cacheWrites: totalCacheWrites,
-						cacheReads: totalCacheReads,
-						cost: totalCost,
-					} satisfies ClineApiReqInfo),
-				)
-			}
-
-			// The task is already cancelled by the provider beforehand, but we
-			// need to re-init to get the updated messages.
-			//
-			// This was take from Cline's implementation of the checkpoints
-			// feature. The cline instance will hang if we don't cancel twice,
-			// so this is currently necessary, but it seems like a complicated
-			// and hacky solution to a problem that I don't fully understand.
-			// I'd like to revisit this in the future and try to improve the
-			// task flow and the communication between the webview and the
-			// Cline instance.
-			this.providerRef.deref()?.cancelTask()
-		} catch (err) {
-			this.providerRef.deref()?.log("[checkpointRestore] disabling checkpoints for this task")
-			this.enableCheckpoints = false
-		}
-	}
-
-	// Metrics
-
-	public getTokenUsage() {
-		return getApiMetrics(combineApiRequests(combineCommandSequences(this.clineMessages.slice(1))))
-	}
-
-	public recordToolUsage(toolName: ToolName) {
-		if (!this.toolUsage[toolName]) {
-			this.toolUsage[toolName] = { attempts: 0, failures: 0 }
-		}
-
-		this.toolUsage[toolName].attempts++
-	}
-
-	public recordToolError(toolName: ToolName, error?: string) {
-		if (!this.toolUsage[toolName]) {
-			this.toolUsage[toolName] = { attempts: 0, failures: 0 }
-		}
-
-		this.toolUsage[toolName].failures++
-
-		if (error) {
-			this.emit("taskToolFailed", this.taskId, toolName, error)
-		}
-	}
-
-	public getToolUsage() {
-		return this.toolUsage
-	}
-
-	// Getters
-
-	public get cwd() {
-		return this.workspacePath
-	}
-
-	public getFileContextTracker(): FileContextTracker {
-		return this.fileContextTracker
+	private async executeToolsSequentially(toolCalls: MultiToolUse[]): Promise<Map<string, ToolResponse>> {
+		// Implement sequential tool execution logic here
+		return new Map()
 	}
 }

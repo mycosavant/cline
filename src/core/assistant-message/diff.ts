@@ -334,12 +334,11 @@ export async function constructNewFileContent(diffContent: string, originalConte
 				result += line + "\n"
 			}
 		}
-	}
-
-	// If this is the final chunk, append any remaining original content
+	}	// If this is the final chunk, append any remaining original content
 	if (isFinal && lastProcessedIndex < originalContent.length) {
 		result += originalContent.slice(lastProcessedIndex)
 	}
 
 	return result
+}
 }

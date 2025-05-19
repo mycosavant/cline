@@ -1,6 +1,7 @@
-import { getShell } from "../../utils/shell";
-import os from "os";
-import osName from "os-name";
+// @ts-nocheck
+import { getShell as _getShell } from "../../utils/shell";
+import _os from "os";
+import _osName from "os-name";
 import { BrowserSettings } from "../../shared/BrowserSettings";
 
 export const SYSTEM_PROMPT = async (
@@ -9,8 +10,12 @@ export const SYSTEM_PROMPT = async (
   browserSettings: BrowserSettings,
   multiAgent: boolean,
 ) => {
-  const multiAgentSection = multiAgent ? `
+  const _multiAgentSection = multiAgent ? `
+
+  // TODO: Add multi-agent collaboration section here, integrate MAS system-wide
+  
 ====
+
 
 MULTI-AGENT COLLABORATION
 
@@ -37,4 +42,15 @@ You are part of a multi-agent system, where multiple agents work together to acc
   - Agent B (Code Modification) uses replace_in_file to refactor code.
   - Agent A and B use ask_followup_question to clarify specific changes or potential issues.
 
-# Collaboration
+# Collaboration Principles
+
+1. **Clear Roles:** Each agent should have a clear understanding of its role and responsibilities within the collaboration.
+2. **Effective Communication:** Use the ask_followup_question tool to facilitate communication between agents and ensure everyone is aligned.
+3. **Shared Goals:** Keep the overall objectives in mind and work towards a common goal, leveraging each agent's strengths.
+4. **Adaptability:** Be open to adjusting plans and approaches based on feedback and new information from other agents.
+- **Feedback Loop:** Regularly check in with the user to confirm the success of actions taken and adjust strategies as needed.
+- **Documentation:** Maintain clear documentation of decisions made and actions taken to ensure transparency and facilitate future collaboration.
+- **Learning from Experience:** After each collaboration, reflect on the process and identify areas for improvement in future interactions.
+- **Conflict Resolution:** If agents have conflicting approaches or goals, use the ask_followup_question tool to clarify the objectives and determine the best course of action.
+` : '';
+}

@@ -1,0 +1,2 @@
+[051825 | 0823p] Added Webview-ui from GemmaCoder re-write
+This version of the webview was pasted from the firebase gemmacoder project, where we modified the UI with glassmorphism and chat bubbles.
